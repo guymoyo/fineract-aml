@@ -1,0 +1,213 @@
+"""Service layer for transaction processing."""
+
+import json
+import logging
+from datetime import datetime, timedelta, timezone
+from uuid import UUID
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.alert import Alert, AlertSource, AlertStatus
+from app.models.transaction import RiskLevel, Transaction
+from app.schemas.transaction import TransactionStats, WebhookPayload
+
+logger = logging.getLogger(__name__)
+
+
+class TransactionService:
+    """Handles transaction ingestion, scoring, and querying."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def ingest_transaction(self, payload: WebhookPayload) -> Transaction:
+        """Ingest a new transaction from a Fineract webhook."""
+        transaction = Transaction(
+            fineract_transaction_id=payload.transaction_id,
+            fineract_account_id=payload.account_id,
+            fineract_client_id=payload.client_id,
+            transaction_type=payload.transaction_type,
+            amount=payload.amount,
+            currency=payload.currency,
+            transaction_date=payload.transaction_date,
+            counterparty_account_id=payload.counterparty_account_id,
+            counterparty_name=payload.counterparty_name,
+            description=payload.description,
+            raw_payload=json.dumps(payload.model_dump(), default=str),
+        )
+        self.db.add(transaction)
+        await self.db.flush()
+        logger.info(
+            "Ingested transaction %s (amount=%.2f, type=%s)",
+            transaction.fineract_transaction_id,
+            transaction.amount,
+            transaction.transaction_type.value,
+        )
+        return transaction
+
+    async def update_risk_score(
+        self,
+        transaction_id: UUID,
+        risk_score: float,
+        anomaly_score: float | None = None,
+        model_version: str | None = None,
+    ) -> Transaction:
+        """Update the risk score of a transaction and set risk level."""
+        from app.core.config import settings
+
+        result = await self.db.execute(
+            select(Transaction).where(Transaction.id == transaction_id)
+        )
+        transaction = result.scalar_one()
+
+        transaction.risk_score = risk_score
+        transaction.anomaly_score = anomaly_score
+        transaction.model_version = model_version
+
+        if risk_score >= settings.risk_score_high:
+            transaction.risk_level = RiskLevel.HIGH
+        elif risk_score >= settings.risk_score_medium:
+            transaction.risk_level = RiskLevel.MEDIUM
+        else:
+            transaction.risk_level = RiskLevel.LOW
+
+        await self.db.flush()
+        return transaction
+
+    async def create_alert_if_needed(
+        self,
+        transaction: Transaction,
+        risk_score: float,
+        source: AlertSource,
+        triggered_rules: list[str] | None = None,
+    ) -> Alert | None:
+        """Create an alert if the risk score exceeds the threshold."""
+        from app.core.config import settings
+
+        if risk_score < settings.risk_score_medium:
+            return None
+
+        alert = Alert(
+            transaction_id=transaction.id,
+            status=AlertStatus.PENDING,
+            source=source,
+            risk_score=risk_score,
+            title=f"Suspicious {transaction.transaction_type.value}: "
+            f"{transaction.currency} {transaction.amount:,.2f}",
+            description=f"Transaction {transaction.fineract_transaction_id} "
+            f"flagged by {source.value} with risk score {risk_score:.2f}",
+            triggered_rules=json.dumps(triggered_rules) if triggered_rules else None,
+        )
+        self.db.add(alert)
+        await self.db.flush()
+        logger.warning(
+            "Alert created for transaction %s (score=%.2f, source=%s)",
+            transaction.fineract_transaction_id,
+            risk_score,
+            source.value,
+        )
+        return alert
+
+    async def get_transaction(self, transaction_id: UUID) -> Transaction | None:
+        result = await self.db.execute(
+            select(Transaction).where(Transaction.id == transaction_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def list_transactions(
+        self, page: int = 1, page_size: int = 50, risk_level: RiskLevel | None = None
+    ) -> tuple[list[Transaction], int]:
+        """List transactions with optional filtering and pagination."""
+        query = select(Transaction)
+        count_query = select(func.count(Transaction.id))
+
+        if risk_level:
+            query = query.where(Transaction.risk_level == risk_level)
+            count_query = count_query.where(Transaction.risk_level == risk_level)
+
+        query = query.order_by(Transaction.created_at.desc())
+        query = query.offset((page - 1) * page_size).limit(page_size)
+
+        result = await self.db.execute(query)
+        transactions = list(result.scalars().all())
+
+        count_result = await self.db.execute(count_query)
+        total = count_result.scalar_one()
+
+        return transactions, total
+
+    async def get_stats(self) -> TransactionStats:
+        """Get dashboard statistics."""
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+        total = (await self.db.execute(select(func.count(Transaction.id)))).scalar_one()
+
+        flagged = (
+            await self.db.execute(
+                select(func.count(Transaction.id)).where(
+                    Transaction.risk_level.in_([RiskLevel.HIGH, RiskLevel.CRITICAL])
+                )
+            )
+        ).scalar_one()
+
+        confirmed = (
+            await self.db.execute(
+                select(func.count(Alert.id)).where(
+                    Alert.status == AlertStatus.CONFIRMED_FRAUD
+                )
+            )
+        ).scalar_one()
+
+        false_pos = (
+            await self.db.execute(
+                select(func.count(Alert.id)).where(
+                    Alert.status == AlertStatus.FALSE_POSITIVE
+                )
+            )
+        ).scalar_one()
+
+        avg_score = (
+            await self.db.execute(
+                select(func.avg(Transaction.risk_score)).where(
+                    Transaction.risk_score.isnot(None)
+                )
+            )
+        ).scalar_one()
+
+        today_count = (
+            await self.db.execute(
+                select(func.count(Transaction.id)).where(
+                    Transaction.created_at >= today
+                )
+            )
+        ).scalar_one()
+
+        pending_alerts = (
+            await self.db.execute(
+                select(func.count(Alert.id)).where(Alert.status == AlertStatus.PENDING)
+            )
+        ).scalar_one()
+
+        return TransactionStats(
+            total_transactions=total,
+            total_flagged=flagged,
+            total_confirmed_fraud=confirmed,
+            total_false_positives=false_pos,
+            average_risk_score=float(avg_score) if avg_score else None,
+            transactions_today=today_count,
+            alerts_pending=pending_alerts,
+        )
+
+    async def get_account_history(
+        self, account_id: str, window_minutes: int = 60
+    ) -> list[Transaction]:
+        """Get recent transactions for an account within a time window."""
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+        result = await self.db.execute(
+            select(Transaction)
+            .where(Transaction.fineract_account_id == account_id)
+            .where(Transaction.created_at >= cutoff)
+            .order_by(Transaction.created_at.desc())
+        )
+        return list(result.scalars().all())

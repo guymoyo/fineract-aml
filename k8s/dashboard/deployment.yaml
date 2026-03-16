@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aml-dashboard
+  namespace: aml
+  labels:
+    app: aml-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aml-dashboard
+  template:
+    metadata:
+      labels:
+        app: aml-dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: ghcr.io/adorsys-gis/fineract-aml-dashboard:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aml-dashboard
+  namespace: aml
+spec:
+  selector:
+    app: aml-dashboard
+  ports:
+    - port: 80
+      targetPort: 80
+  type: ClusterIP

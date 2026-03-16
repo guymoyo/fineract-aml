@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aml-celery-worker
+  namespace: aml
+  labels:
+    app: aml-celery-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aml-celery-worker
+  template:
+    metadata:
+      labels:
+        app: aml-celery-worker
+    spec:
+      containers:
+        - name: celery-worker
+          image: ghcr.io/adorsys-gis/fineract-aml-api:latest
+          command: ["celery", "-A", "app.tasks.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
+          env:
+            - name: AML_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: aml-secrets
+                  key: database-url
+            - name: AML_REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: aml-secrets
+                  key: redis-url
+            - name: AML_CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: aml-secrets
+                  key: celery-broker-url
+            - name: AML_CELERY_RESULT_BACKEND
+              valueFrom:
+                secretKeyRef:
+                  name: aml-secrets
+                  key: celery-result-backend
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          volumeMounts:
+            - name: model-storage
+              mountPath: /app/models
+      volumes:
+        - name: model-storage
+          persistentVolumeClaim:
+            claimName: aml-model-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aml-celery-beat
+  namespace: aml
+  labels:
+    app: aml-celery-beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aml-celery-beat
+  template:
+    metadata:
+      labels:
+        app: aml-celery-beat
+    spec:
+      containers:
+        - name: celery-beat
+          image: ghcr.io/adorsys-gis/fineract-aml-api:latest
+          command: ["celery", "-A", "app.tasks.celery_app", "beat", "--loglevel=info"]
+          env:
+            - name: AML_CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: aml-secrets
+                  key: celery-broker-url
+            - name: AML_CELERY_RESULT_BACKEND
+              valueFrom:
+                secretKeyRef:
+                  name: aml-secrets
+                  key: celery-result-backend
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

@@ -1,0 +1,40 @@
+{
+  "name": "fineract-aml-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "biome check .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.2",
+    "@tanstack/react-router": "^1.131.44",
+    "@tanstack/react-router-devtools": "^1.131.44",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "formik": "^2.4.6",
+    "lucide-react": "^0.544.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "recharts": "^2.15.3",
+    "zod": "^4.1.9",
+    "zod-formik-adapter": "2.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.0",
+    "@tanstack/router-plugin": "^1.131.44",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react-swc": "^4.0.0",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.4",
+    "tailwindcss": "^4.1.10",
+    "@tailwindcss/vite": "^4.1.10",
+    "typescript": "~5.8.3",
+    "vite": "^7.1.2"
+  }
+}

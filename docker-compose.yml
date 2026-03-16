@@ -1,0 +1,118 @@
+services:
+  # ── AML API ──────────────────────────────────────────────
+  api:
+    build: ./backend
+    container_name: aml-api
+    ports:
+      - "8000:8000"
+    environment:
+      - AML_DATABASE_URL=postgresql+asyncpg://aml:aml@postgres:5432/fineract_aml
+      - AML_REDIS_URL=redis://redis:6379/0
+      - AML_CELERY_BROKER_URL=redis://redis:6379/1
+      - AML_CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - AML_MLFLOW_TRACKING_URI=http://mlflow:5000
+      - AML_DEBUG=true
+      - AML_FINERACT_WEBHOOK_SECRET=change-me-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - model-data:/app/models
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── Celery Worker ────────────────────────────────────────
+  celery-worker:
+    build: ./backend
+    container_name: aml-celery-worker
+    environment:
+      - AML_DATABASE_URL=postgresql+asyncpg://aml:aml@postgres:5432/fineract_aml
+      - AML_REDIS_URL=redis://redis:6379/0
+      - AML_CELERY_BROKER_URL=redis://redis:6379/1
+      - AML_CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - AML_MLFLOW_TRACKING_URI=http://mlflow:5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - model-data:/app/models
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
+
+  # ── Celery Beat (scheduler) ──────────────────────────────
+  celery-beat:
+    build: ./backend
+    container_name: aml-celery-beat
+    environment:
+      - AML_CELERY_BROKER_URL=redis://redis:6379/1
+      - AML_CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+
+  # ── PostgreSQL ───────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: aml-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: aml
+      POSTGRES_PASSWORD: aml
+      POSTGRES_DB: fineract_aml
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aml -d fineract_aml"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: aml-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── MLflow ───────────────────────────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.16.2
+    container_name: aml-mlflow
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=postgresql://aml:aml@postgres:5432/fineract_aml
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - mlflow-data:/mlflow/artifacts
+    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql://aml:aml@postgres:5432/fineract_aml --default-artifact-root /mlflow/artifacts
+
+  # ── Compliance Dashboard ─────────────────────────────────
+  dashboard:
+    build: ./dashboard
+    container_name: aml-dashboard
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  model-data:
+  mlflow-data:

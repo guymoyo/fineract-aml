@@ -1,0 +1,158 @@
+# Fineract AML — Anti-Money Laundering Detection Service
+
+Real-time Anti-Money Laundering (AML) and fraud detection service for [Apache Fineract](https://fineract.apache.org/). Consumes transaction events via webhooks, applies rule-based and ML-powered analysis, and provides a compliance analyst dashboard for investigation and case management.
+
+## Architecture
+
+```
+┌─────────────┐     Webhook      ┌──────────────┐     Celery      ┌────────────────┐
+│   Fineract  │ ──────────────▶  │   FastAPI     │ ─────────────▶  │  Analysis       │
+│   (Core     │  POST /webhook   │   (API)       │   async task    │  Pipeline       │
+│   Banking)  │                  │               │                 │                 │
+└─────────────┘                  └──────┬───────┘                 │  1. Rules       │
+                                        │                          │  2. Anomaly     │
+                                        │ REST API                 │  3. XGBoost     │
+                                        ▼                          └───────┬────────┘
+                                 ┌──────────────┐                         │
+                                 │  Compliance   │      Alerts            │
+                                 │  Dashboard    │ ◀──────────────────────┘
+                                 │  (React)      │
+                                 └──────────────┘
+                                   │
+                                   │  Analyst reviews alerts
+                                   │  (human-in-the-loop)
+                                   ▼
+                              Labeled data → Model retraining
+```
+
+## Key Features
+
+- **Webhook Consumer** — receives deposit/withdrawal events from Fineract in real-time
+- **Rule Engine** — deterministic AML rules (large amounts, structuring, velocity, unusual hours)
+- **Anomaly Detection** — unsupervised ML (Isolation Forest) that works without labeled data
+- **Fraud Classifier** — supervised ML (XGBoost) that trains on analyst-labeled data over time
+- **Compliance Dashboard** — review alerts, investigate cases, label transactions
+- **Human-in-the-Loop** — analyst decisions become training data for continuous ML improvement
+- **Case Management** — group related suspicious transactions into investigation cases
+- **MLflow Integration** — model versioning, experiment tracking, metrics logging
+
+## Quick Start
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Python 3.12+ (for local development)
+- Node.js 20+ (for dashboard development)
+
+### Run with Docker Compose
+
+```bash
+# Clone the repository
+git clone https://github.com/ADORSYS-GIS/fineract-aml.git
+cd fineract-aml
+
+# Copy environment file
+cp .env.example .env
+
+# Start all services
+docker compose up -d
+
+# Run database migrations
+docker compose exec api alembic upgrade head
+
+# Create initial admin user (interactive)
+docker compose exec api python -m app.scripts.create_admin
+```
+
+Services will be available at:
+
+| Service | URL |
+|---------|-----|
+| AML API | http://localhost:8000 |
+| API Docs (Swagger) | http://localhost:8000/docs |
+| API Docs (ReDoc) | http://localhost:8000/redoc |
+| Compliance Dashboard | http://localhost:3000 |
+| MLflow UI | http://localhost:5000 |
+
+### Local Development
+
+```bash
+# Backend
+cd backend
+python -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# Celery worker (separate terminal)
+celery -A app.tasks.celery_app worker --loglevel=info
+
+# Celery beat (separate terminal)
+celery -A app.tasks.celery_app beat --loglevel=info
+```
+
+### Run Tests
+
+```bash
+cd backend
+pytest -v
+pytest --cov=app --cov-report=html
+```
+
+## Project Structure
+
+```
+fineract-aml/
+├── backend/                    # Python FastAPI backend
+│   ├── app/
+│   │   ├── api/               # REST API endpoints
+│   │   │   ├── webhook.py     # Fineract webhook consumer
+│   │   │   ├── alerts.py      # Alert management
+│   │   │   ├── transactions.py# Transaction queries
+│   │   │   ├── cases.py       # Case management
+│   │   │   └── auth.py        # Authentication
+│   │   ├── core/              # Config, database, security
+│   │   ├── features/          # Feature engineering for ML
+│   │   ├── ml/                # ML models
+│   │   │   ├── anomaly_detector.py  # Isolation Forest (unsupervised)
+│   │   │   └── fraud_classifier.py  # XGBoost (supervised)
+│   │   ├── models/            # SQLAlchemy database models
+│   │   ├── rules/             # Deterministic rule engine
+│   │   ├── schemas/           # Pydantic request/response schemas
+│   │   ├── services/          # Business logic layer
+│   │   └── tasks/             # Celery async tasks
+│   ├── alembic/               # Database migrations
+│   ├── tests/                 # Test suite
+│   ├── Dockerfile
+│   └── requirements.txt
+├── dashboard/                  # React compliance dashboard
+├── ml/                        # ML experiments & training notebooks
+├── k8s/                       # Kubernetes deployment manifests
+├── docs/                      # Documentation
+├── docker-compose.yml
+└── .env.example
+```
+
+## Documentation
+
+- [Architecture Overview](docs/architecture/overview.md)
+- [API Reference](docs/api/endpoints.md)
+- [Fineract Webhook Setup](docs/guides/fineract-webhook-setup.md)
+- [ML Pipeline Guide](docs/ml/pipeline.md)
+- [Deployment Guide](docs/guides/deployment.md)
+- [Contributing](docs/guides/contributing.md)
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| API | Python 3.12, FastAPI, SQLAlchemy 2.0 |
+| Database | PostgreSQL 16 |
+| Task Queue | Celery + Redis |
+| ML | scikit-learn, XGBoost, MLflow |
+| Dashboard | React (planned) |
+| Containers | Docker, Kubernetes |
+
+## License
+
+Apache License 2.0

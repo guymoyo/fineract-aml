@@ -1,0 +1,89 @@
+"""Alert endpoints for the compliance dashboard."""
+
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.core.security import verify_token
+from app.models.alert import AlertStatus
+from app.schemas.alert import AlertAssign, AlertListResponse, AlertResponse, AlertStatusUpdate
+from app.schemas.review import ReviewCreate, ReviewResponse
+from app.services.alert_service import AlertService
+
+router = APIRouter(
+    prefix="/alerts", tags=["Alerts"], dependencies=[Depends(verify_token)]
+)
+
+
+@router.get("", response_model=AlertListResponse)
+async def list_alerts(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    status_filter: AlertStatus | None = Query(None, alias="status"),
+    assigned_to: UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """List alerts, sorted by risk score (highest first)."""
+    service = AlertService(db)
+    alerts, total = await service.list_alerts(page, page_size, status_filter, assigned_to)
+    return AlertListResponse(
+        items=[AlertResponse.model_validate(a) for a in alerts],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/{alert_id}", response_model=AlertResponse)
+async def get_alert(alert_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get a single alert with its transaction and reviews."""
+    service = AlertService(db)
+    alert = await service.get_alert(alert_id)
+    if not alert:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found"
+        )
+    return AlertResponse.model_validate(alert)
+
+
+@router.patch("/{alert_id}/assign", response_model=AlertResponse)
+async def assign_alert(
+    alert_id: UUID,
+    data: AlertAssign,
+    db: AsyncSession = Depends(get_db),
+):
+    """Assign an alert to a compliance analyst."""
+    service = AlertService(db)
+    alert = await service.assign_alert(alert_id, data.assigned_to)
+    return AlertResponse.model_validate(alert)
+
+
+@router.patch("/{alert_id}/status", response_model=AlertResponse)
+async def update_alert_status(
+    alert_id: UUID,
+    data: AlertStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the status of an alert."""
+    service = AlertService(db)
+    alert = await service.update_status(alert_id, data.status)
+    return AlertResponse.model_validate(alert)
+
+
+@router.post("/{alert_id}/review", response_model=ReviewResponse)
+async def submit_review(
+    alert_id: UUID,
+    review_data: ReviewCreate,
+    token_data: dict = Depends(verify_token),
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit a review decision for an alert.
+
+    This is the human-in-the-loop step that builds labeled training data.
+    """
+    reviewer_id = UUID(token_data["sub"])
+    service = AlertService(db)
+    review = await service.submit_review(alert_id, reviewer_id, review_data)
+    return ReviewResponse.model_validate(review)
