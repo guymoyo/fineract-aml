@@ -67,9 +67,9 @@ async def _analyze(transaction_id: str):
         # 3. Extract features
         features = FeatureExtractor.extract(transaction, history_1h, history_24h)
 
-        # 4. Run rule engine
+        # 4. Run rule engine (uses 24h history for IP-based rules)
         rule_engine = RuleEngine()
-        rule_result = rule_engine.evaluate(transaction, history_1h)
+        rule_result = rule_engine.evaluate(transaction, history_1h, history_24h)
 
         # Store rule matches
         for match in rule_result.triggered_rules:

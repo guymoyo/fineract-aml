@@ -20,7 +20,7 @@ class TestFeatureExtractor:
     def test_feature_names_match(self):
         names = FeatureExtractor.get_feature_names()
         assert names == FEATURE_NAMES
-        assert len(names) == 22
+        assert len(names) == len(FEATURE_NAMES)
 
     def test_deposit_one_hot(self):
         tx = FakeTransaction(transaction_type=TransactionType.DEPOSIT)
@@ -63,3 +63,19 @@ class TestFeatureExtractor:
         tx = FakeTransaction()
         features = FeatureExtractor.extract(tx, [], [])
         assert np.all(np.isfinite(features))
+
+    def test_new_ip_feature(self):
+        tx = FakeTransaction(ip_address="10.0.0.99")
+        history = [FakeTransaction(ip_address="192.168.1.1") for _ in range(3)]
+        features = FeatureExtractor.extract(tx, [], history)
+        ip_new_idx = FEATURE_NAMES.index("is_new_ip_for_account")
+        ip_count_idx = FEATURE_NAMES.index("unique_ips_24h")
+        assert features[ip_new_idx] == 1.0  # new IP
+        assert features[ip_count_idx] == 1.0  # 1 unique known IP
+
+    def test_known_ip_feature(self):
+        tx = FakeTransaction(ip_address="192.168.1.1")
+        history = [FakeTransaction(ip_address="192.168.1.1") for _ in range(3)]
+        features = FeatureExtractor.extract(tx, [], history)
+        ip_new_idx = FEATURE_NAMES.index("is_new_ip_for_account")
+        assert features[ip_new_idx] == 0.0  # known IP

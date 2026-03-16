@@ -68,8 +68,16 @@ class RuleEngine:
         self,
         transaction: Transaction,
         account_history: list[Transaction],
+        account_history_24h: list[Transaction] | None = None,
     ) -> RuleEngineResult:
-        """Run all rules against a transaction."""
+        """Run all rules against a transaction.
+
+        Args:
+            transaction: The transaction to evaluate.
+            account_history: Short-window history (1h) for velocity rules.
+            account_history_24h: Longer-window history (24h) for IP-based rules.
+                Falls back to account_history if not provided.
+        """
         result = RuleEngineResult()
 
         result.results.append(self._check_large_amount(transaction))
@@ -78,7 +86,9 @@ class RuleEngine:
         result.results.append(self._check_round_number(transaction))
         result.results.append(self._check_unusual_hours(transaction))
         result.results.append(self._check_velocity(transaction, account_history))
-        result.results.append(self._check_new_ip(transaction, account_history))
+        result.results.append(
+            self._check_new_ip(transaction, account_history_24h or account_history)
+        )
 
         if result.triggered_rules:
             logger.info(

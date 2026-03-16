@@ -213,7 +213,7 @@ class TransactionService:
         result = await self.db.execute(
             select(Transaction)
             .where(Transaction.fineract_account_id == account_id)
-            .where(Transaction.created_at >= cutoff)
-            .order_by(Transaction.created_at.desc())
+            .where(Transaction.transaction_date >= cutoff)
+            .order_by(Transaction.transaction_date.desc())
         )
         return list(result.scalars().all())

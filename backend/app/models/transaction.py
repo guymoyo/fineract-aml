@@ -2,6 +2,7 @@
 
 import enum
 import uuid
+from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, Float, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -46,7 +47,7 @@ class Transaction(Base, TimestampMixin):
     )
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
-    transaction_date: Mapped[str] = mapped_column(DateTime(timezone=True), nullable=False)
+    transaction_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     # Counterparty info (if transfer)
     counterparty_account_id: Mapped[str | None] = mapped_column(String(100))

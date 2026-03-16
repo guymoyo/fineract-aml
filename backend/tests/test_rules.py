@@ -68,3 +68,23 @@ class TestRuleEngine:
         history = [FakeTransaction(amount=20000.0) for _ in range(20)]
         result = self.engine.evaluate(tx, history)
         assert result.combined_score <= 1.0
+
+    def test_new_ip_triggers(self):
+        tx = FakeTransaction(amount=500.0, ip_address="10.0.0.99")
+        history = [FakeTransaction(amount=100.0, ip_address="192.168.1.1") for _ in range(3)]
+        result = self.engine.evaluate(tx, history, account_history_24h=history)
+        triggered = [r.rule_name for r in result.triggered_rules]
+        assert "new_ip_address" in triggered
+
+    def test_known_ip_does_not_trigger(self):
+        tx = FakeTransaction(amount=500.0, ip_address="192.168.1.1")
+        history = [FakeTransaction(amount=100.0, ip_address="192.168.1.1") for _ in range(3)]
+        result = self.engine.evaluate(tx, history, account_history_24h=history)
+        triggered = [r.rule_name for r in result.triggered_rules]
+        assert "new_ip_address" not in triggered
+
+    def test_no_ip_does_not_trigger(self):
+        tx = FakeTransaction(amount=500.0)
+        result = self.engine.evaluate(tx, [])
+        triggered = [r.rule_name for r in result.triggered_rules]
+        assert "new_ip_address" not in triggered
