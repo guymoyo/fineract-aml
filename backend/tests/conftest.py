@@ -28,6 +28,10 @@ class FakeTransaction:
     model_version: str | None = None
     description: str | None = None
     raw_payload: str | None = None
+    ip_address: str | None = None
+    user_agent: str | None = None
+    country_code: str | None = None
+    geo_location: str | None = None
 
     def __post_init__(self):
         from app.models.transaction import TransactionType

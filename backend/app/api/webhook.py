@@ -43,6 +43,10 @@ async def receive_fineract_webhook(
                 detail="Invalid webhook signature",
             )
 
+    # Capture client IP from request if not in payload
+    if not payload.ip_address and request.client:
+        payload.ip_address = request.client.host
+
     service = TransactionService(db)
     transaction = await service.ingest_transaction(payload)
 

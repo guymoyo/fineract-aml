@@ -16,11 +16,15 @@ class WebhookPayload(BaseModel):
     client_id: str = Field(..., description="Fineract client ID")
     transaction_type: TransactionType
     amount: float = Field(..., gt=0)
-    currency: str = Field(default="USD", max_length=3)
+    currency: str | None = Field(default=None, max_length=3, description="Defaults to AML_DEFAULT_CURRENCY if not provided")
     transaction_date: datetime
     counterparty_account_id: str | None = None
     counterparty_name: str | None = None
     description: str | None = None
+    ip_address: str | None = Field(default=None, description="Client IP address (auto-captured from request if not provided)")
+    user_agent: str | None = None
+    country_code: str | None = Field(default=None, max_length=2, description="ISO 3166-1 alpha-2 country code")
+    geo_location: str | None = Field(default=None, description="Latitude,longitude or city name")
 
 
 class TransactionResponse(BaseModel):
@@ -37,6 +41,8 @@ class TransactionResponse(BaseModel):
     risk_score: float | None
     risk_level: RiskLevel | None
     anomaly_score: float | None
+    ip_address: str | None
+    country_code: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

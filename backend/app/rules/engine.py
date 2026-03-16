@@ -78,6 +78,7 @@ class RuleEngine:
         result.results.append(self._check_round_number(transaction))
         result.results.append(self._check_unusual_hours(transaction))
         result.results.append(self._check_velocity(transaction, account_history))
+        result.results.append(self._check_new_ip(transaction, account_history))
 
         if result.triggered_rules:
             logger.info(
@@ -182,4 +183,32 @@ class RuleEngine:
             details=f"Cumulative volume {tx.currency} {total_volume:,.2f} in "
             f"{settings.rapid_transaction_window_minutes} minutes "
             f"(threshold: {tx.currency} {threshold:,.2f})",
+        )
+
+    def _check_new_ip(
+        self, tx: Transaction, history: list[Transaction]
+    ) -> RuleResult:
+        """Flag transactions from an IP address not previously seen for this account."""
+        current_ip = getattr(tx, "ip_address", None)
+        if not current_ip:
+            return RuleResult(
+                rule_name="new_ip_address",
+                category="geographic",
+                triggered=False,
+                severity=0.0,
+                details="No IP address available",
+            )
+        known_ips = {
+            getattr(t, "ip_address", None)
+            for t in history
+            if getattr(t, "ip_address", None)
+        }
+        is_new = current_ip not in known_ips and len(known_ips) > 0
+        return RuleResult(
+            rule_name="new_ip_address",
+            category="geographic",
+            triggered=is_new,
+            severity=0.5 if is_new else 0.0,
+            details=f"IP {current_ip} {'is new' if is_new else 'is known'} for account "
+            f"(known IPs: {len(known_ips)})",
         )

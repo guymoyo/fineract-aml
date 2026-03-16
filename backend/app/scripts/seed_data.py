@@ -64,6 +64,15 @@ async def seed():
         clients = [f"CLI-{i:03d}" for i in range(1, 16)]
         currencies = ["USD", "EUR", "XAF"]
 
+        sample_ips = [
+            "192.168.1.100", "10.0.0.50", "172.16.0.10",
+            "41.202.207.14", "41.210.45.67",  # Cameroon IPs
+            "197.239.5.100", "154.72.166.30",  # Central Africa IPs
+            "8.8.8.8", "185.220.101.1",  # Suspicious/Tor exit
+            None,
+        ]
+        sample_countries = ["CM", "GA", "CF", "US", "FR", "NG", None]
+
         transactions = []
         for i in range(500):
             tx_type = rng.choice(list(TransactionType))
@@ -104,6 +113,8 @@ async def seed():
                     "Utility bill",
                     None,
                 ]),
+                ip_address=rng.choice(sample_ips),
+                country_code=rng.choice(sample_countries),
             )
             transactions.append(tx)
             db.add(tx)

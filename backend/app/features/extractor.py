@@ -39,6 +39,8 @@ FEATURE_NAMES = [
     "amount_vs_avg_ratio",
     "unique_counterparties_24h",
     "same_type_ratio_24h",
+    "is_new_ip_for_account",
+    "unique_ips_24h",
 ]
 
 
@@ -130,6 +132,16 @@ class FeatureExtractor:
             features.append(same_type / len(account_history_24h))
         else:
             features.append(0.0)
+
+        # --- IP-based features ---
+        known_ips = {
+            t.ip_address for t in account_history_24h if getattr(t, "ip_address", None)
+        }
+        current_ip = getattr(transaction, "ip_address", None)
+        # Is the IP new for this account (not seen in 24h history)?
+        features.append(1.0 if current_ip and current_ip not in known_ips else 0.0)
+        # Number of unique IPs used by account in 24h
+        features.append(float(len(known_ips)))
 
         return np.array(features, dtype=np.float64)
 

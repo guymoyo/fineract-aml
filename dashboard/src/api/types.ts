@@ -47,6 +47,8 @@ export interface Transaction {
   risk_score: number | null;
   risk_level: RiskLevel | null;
   anomaly_score: number | null;
+  ip_address: string | null;
+  country_code: string | null;
   created_at: string;
 }
 

@@ -23,17 +23,23 @@ class TransactionService:
 
     async def ingest_transaction(self, payload: WebhookPayload) -> Transaction:
         """Ingest a new transaction from a Fineract webhook."""
+        from app.core.config import settings
+
         transaction = Transaction(
             fineract_transaction_id=payload.transaction_id,
             fineract_account_id=payload.account_id,
             fineract_client_id=payload.client_id,
             transaction_type=payload.transaction_type,
             amount=payload.amount,
-            currency=payload.currency,
+            currency=payload.currency or settings.default_currency,
             transaction_date=payload.transaction_date,
             counterparty_account_id=payload.counterparty_account_id,
             counterparty_name=payload.counterparty_name,
             description=payload.description,
+            ip_address=payload.ip_address,
+            user_agent=payload.user_agent,
+            country_code=payload.country_code,
+            geo_location=payload.geo_location,
             raw_payload=json.dumps(payload.model_dump(), default=str),
         )
         self.db.add(transaction)

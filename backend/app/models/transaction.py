@@ -45,12 +45,18 @@ class Transaction(Base, TimestampMixin):
         Enum(TransactionType), nullable=False
     )
     amount: Mapped[float] = mapped_column(Float, nullable=False)
-    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
     transaction_date: Mapped[str] = mapped_column(DateTime(timezone=True), nullable=False)
 
     # Counterparty info (if transfer)
     counterparty_account_id: Mapped[str | None] = mapped_column(String(100))
     counterparty_name: Mapped[str | None] = mapped_column(String(255))
+
+    # Client network info (captured from webhook request)
+    ip_address: Mapped[str | None] = mapped_column(String(45))  # IPv6 max length
+    user_agent: Mapped[str | None] = mapped_column(String(500))
+    country_code: Mapped[str | None] = mapped_column(String(2))  # ISO 3166-1 alpha-2
+    geo_location: Mapped[str | None] = mapped_column(String(100))  # "lat,lon" or city
 
     # Risk scoring
     risk_score: Mapped[float | None] = mapped_column(Float)

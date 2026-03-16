@@ -20,7 +20,7 @@ class TestFeatureExtractor:
     def test_feature_names_match(self):
         names = FeatureExtractor.get_feature_names()
         assert names == FEATURE_NAMES
-        assert len(names) == 20
+        assert len(names) == 22
 
     def test_deposit_one_hot(self):
         tx = FakeTransaction(transaction_type=TransactionType.DEPOSIT)

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
 
+    # Currency
+    default_currency: str = "XAF"
+
     # Rule engine
     max_transaction_amount: float = 10000.0
     rapid_transaction_window_minutes: int = 60
