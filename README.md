@@ -188,14 +188,36 @@ curl -X POST http://localhost:8000/api/v1/credit/request \
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|-----------|
-| API | Python 3.12, FastAPI, SQLAlchemy 2.0 |
-| Database | PostgreSQL 16 |
-| Task Queue | Celery + Redis |
-| ML | scikit-learn, XGBoost, MLflow |
-| Dashboard | React, TanStack Router, TanStack Query |
-| Containers | Docker, Kubernetes |
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| API | Python 3.12, FastAPI | REST API with async support, auto-generated Swagger docs |
+| ORM | SQLAlchemy 2.0 (async) | Database models with async PostgreSQL driver (asyncpg) |
+| Database | PostgreSQL 16 | Permanent transaction storage, credit profiles, alerts, cases |
+| Task Queue | Celery + Redis | Background analysis, nightly scoring, weekly ML retraining |
+| ML | scikit-learn, XGBoost, MLflow | 4 ML models (see below) with experiment tracking |
+| Dashboard | React, TanStack Router, TanStack Query | Compliance analyst UI with file-based routing |
+| Auth | JWT (PyJWT) | Token-based authentication for API and dashboard |
+| Validation | Pydantic v2 | Request/response schemas and config management |
+| Containers | Docker, Docker Compose, Kubernetes | Development and production deployment |
+
+### ML Models
+
+The system uses 4 complementary models — 3 for AML fraud detection and 1 for credit scoring:
+
+| Model | Type | Library | Purpose | Training |
+|-------|------|---------|---------|----------|
+| **Rule Engine** | Deterministic | Custom Python | Checks 7 suspicious patterns (large amounts, structuring, rapid transactions, unusual hours, circular transfers, new counterparties, rapid pairs) | No training — rules are configured via environment variables |
+| **Isolation Forest** | Unsupervised | scikit-learn | Anomaly detection — flags statistically unusual transactions without needing labeled data | Retrains automatically as data grows |
+| **XGBoost Classifier** | Supervised | XGBoost | Fraud classification — learns from analyst decisions (fraud vs. legitimate) to predict fraud probability | Retrains when analysts label enough new data |
+| **K-Means Clustering** | Unsupervised | scikit-learn | Credit tier validation — groups customers into 5 clusters to validate rule-based credit tiers | Retrains weekly via Celery Beat |
+
+**How they work together:**
+- For **AML**: Every transaction passes through the Rule Engine → Isolation Forest → XGBoost (if trained). Each produces a risk score, and the highest score wins. High-risk transactions generate alerts for compliance analysts.
+- For **Credit**: The Rule Engine scores customers based on 19 behavioral features. K-Means clustering independently groups customers to validate those scores. When both agree, confidence is higher (hybrid scoring).
+
+### Transaction Storage
+
+All transactions are stored **permanently** in PostgreSQL. The credit scoring system uses a **180-day sliding window** — it looks at each customer's last 6 months of transactions to compute their credit score. This means scores automatically reflect recent behavior changes without losing historical data.
 
 ## License
 

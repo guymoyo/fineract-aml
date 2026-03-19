@@ -205,3 +205,59 @@ When a credit request is submitted, the system generates an automatic recommenda
 | `evaluate_credit_request` | On demand | Re-scores a specific client for a credit request (with retry) |
 
 All tasks use a fresh `create_async_engine` per invocation for Celery fork-safety (no shared connection pools across forked workers).
+
+## Tech Stack
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| API | Python 3.12, FastAPI | REST API with async support, auto-generated Swagger docs |
+| ORM | SQLAlchemy 2.0 (async) | Database models with async PostgreSQL driver (asyncpg) |
+| Database | PostgreSQL 16 | Permanent transaction storage, credit profiles, alerts, cases |
+| Task Queue | Celery + Redis | Background analysis, nightly scoring, weekly ML retraining |
+| ML | scikit-learn, XGBoost, MLflow | 4 ML models with experiment tracking |
+| Dashboard | React, TanStack Router, TanStack Query | Compliance analyst UI with file-based routing |
+| Auth | JWT (PyJWT) | Token-based authentication |
+| Validation | Pydantic v2 | Request/response schemas and config management |
+| Containers | Docker, Docker Compose, Kubernetes | Development and production deployment |
+
+## ML Models
+
+The system uses 4 complementary models — 3 for AML fraud detection and 1 for credit scoring:
+
+| Model | Type | Library | Purpose | Training |
+|-------|------|---------|---------|----------|
+| **Rule Engine** | Deterministic | Custom Python | Checks 7 suspicious patterns (large amounts, structuring, rapid transactions, unusual hours, circular transfers, new counterparties, rapid pairs) | No training — rules configured via env vars |
+| **Isolation Forest** | Unsupervised | scikit-learn | Anomaly detection — flags statistically unusual transactions without labeled data | Retrains automatically as data grows |
+| **XGBoost Classifier** | Supervised | XGBoost | Fraud classification — learns from analyst decisions to predict fraud probability | Retrains when analysts label enough new data |
+| **K-Means Clustering** | Unsupervised | scikit-learn | Credit tier validation — groups customers into 5 clusters to validate rule-based tiers | Weekly via Celery Beat |
+
+### How They Work Together
+
+**For AML detection:** Every transaction passes through three layers:
+1. **Rule Engine** — deterministic checks (structuring, velocity, etc.)
+2. **Isolation Forest** — statistical anomaly detection (no labels needed)
+3. **XGBoost** — learned fraud patterns (trained on analyst decisions)
+
+Each produces a risk score. The highest score determines the overall risk level. High-risk transactions generate alerts for compliance analysts to review.
+
+**For Credit Scoring:** Two approaches run in parallel:
+1. **Rule-based scorer** — weighted formula using 19 behavioral features (primary)
+2. **K-Means clustering** — independently groups customers into 5 clusters (validation)
+
+When both the rule-based tier and the ML cluster agree, the scoring method is marked as "hybrid" — giving higher confidence in the assessment.
+
+## Transaction Storage
+
+All transactions received from Fineract are stored **permanently** in PostgreSQL. They are never deleted or archived.
+
+The credit scoring system uses a **180-day sliding window** — it looks at each customer's last 6 months of transactions to compute features and scores. This means:
+- Scores automatically reflect recent behavior changes
+- Historical data is preserved for auditing and compliance
+- The window is configurable via the feature extraction parameters
+
+**Source files:**
+- Rule Engine: `backend/app/rules/engine.py`
+- Isolation Forest: `backend/app/ml/anomaly_detector.py`
+- XGBoost Classifier: `backend/app/ml/fraud_classifier.py`
+- K-Means Clustering: `backend/app/ml/credit_scorer.py`
+- Feature Engineering: `backend/app/features/extractor.py` (AML), `backend/app/features/credit_extractor.py` (Credit)
