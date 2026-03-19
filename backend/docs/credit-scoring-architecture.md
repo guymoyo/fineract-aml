@@ -1,5 +1,58 @@
 # Credit Scoring Architecture
 
+## How It All Works (Plain Language)
+
+### AML (Anti-Money Laundering)
+
+**Transaction Monitoring:** Fineract sends every transaction (deposit, withdrawal, transfer, loan) to our system via a webhook. Each transaction gets analyzed automatically in the background by a Celery worker.
+
+**Rule Engine** checks for suspicious patterns:
+- Large amounts → flagged
+- Structuring → amounts just under 10,000 (trying to avoid detection)
+- Rapid transactions → many transactions in a short window
+- Night transactions → activity at unusual hours (2–5 AM)
+- Circular transfers → A sends to B, B sends back to A (money laundering pattern)
+- Rapid pair transfers → same two accounts exchanging money repeatedly
+- New counterparty → first-time transfer to an unknown account
+
+**Risk Score:** Each transaction gets a score from 0% to 100%. If high enough → an Alert is created for compliance analysts to review.
+
+**Alerts & Cases:** Analysts see alerts in the dashboard, review them, and mark as fraud or legitimate. Their decisions become training data for the ML models.
+
+### Credit Scoring
+
+**Feature Extraction:** Every night, the system looks at each customer's last 180 days of transactions and computes 19 features: how regularly they deposit, how much they save, do they repay loans, any fraud history, etc.
+
+**Scoring:** A weighted formula turns those 19 features into a single score (0 to 1). Biggest factors: deposit consistency (20%), net cash flow (20%), loan repayment (15%), savings rate (15%).
+
+**Tier Segmentation:** Score → Tier → Max borrowable amount (in XAF):
+- ≥ 80% → Tier A (Excellent) → 50,000 XAF
+- ≥ 65% → Tier B (Good) → 20,000 XAF
+- ≥ 50% → Tier C (Fair) → 10,000 XAF
+- ≥ 35% → Tier D (Poor) → 1,000 XAF
+- < 35% → Tier E (Very Poor) → 0 XAF (no credit)
+
+**ML Validation:** Weekly, a K-Means clustering model groups customers into 5 clusters. This validates the rule-based tiers — if both agree, confidence is higher.
+
+**Credit Request Flow:**
+1. Customer applies for a loan
+2. System re-computes their score in real-time
+3. Auto-recommendation generated: approve / review carefully / reject
+4. Compliance analyst reviews in the dashboard
+5. Analyst approves or rejects (never auto-approved)
+
+### Dashboard Pages
+
+- **Dashboard** → overview stats (transactions, alerts, system health)
+- **Alerts** → review flagged transactions, mark as fraud/legitimate
+- **Transactions** → browse all transactions with risk levels
+- **Cases** → group related alerts into investigations
+- **Credit Profiles** → see every customer's score, tier, max credit
+- **Credit Requests** → review queue with approve/reject buttons
+- **Credit Analytics** → tier distribution chart, summary stats
+
+---
+
 ## System Overview
 
 ```
@@ -73,10 +126,10 @@ Final score is clamped to [0.0, 1.0].
 
 | Tier | Label | Min Score | Max Credit (XAF) |
 |------|-------|-----------|-------------------|
-| A | Excellent | ≥ 0.80 | 5,000,000 |
-| B | Good | ≥ 0.65 | 2,000,000 |
-| C | Fair | ≥ 0.50 | 1,000,000 |
-| D | Poor | ≥ 0.35 | 500,000 |
+| A | Excellent | ≥ 0.80 | 50,000 |
+| B | Good | ≥ 0.65 | 20,000 |
+| C | Fair | ≥ 0.50 | 10,000 |
+| D | Poor | ≥ 0.35 | 1,000 |
 | E | Very Poor | < 0.35 | 0 (no credit) |
 
 ### ML Clustering (Validation)

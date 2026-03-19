@@ -143,11 +143,21 @@ fineract-aml/
 The system computes credit scores for customers based on their transaction behavior, segments them into tiers (A–E), and provides compliance-reviewed credit request workflows.
 
 **How it works:**
-1. **Nightly batch scoring** extracts 19 behavioral features from each customer's 180-day transaction history
-2. **Rule-based scoring** computes a weighted credit score (0–1) and assigns a tier
-3. **ML clustering** (K-Means, trained weekly) validates rule-based segments
-4. **Credit requests** trigger real-time re-scoring and generate auto-recommendations
-5. **Compliance analysts** review and approve/reject via the dashboard
+1. Every night, the system looks at each customer's last 180 days of transactions and computes 19 behavioral features (deposit consistency, savings rate, loan repayment rate, fraud history, etc.)
+2. A **weighted formula** turns those features into a single credit score (0–1). Biggest factors: deposit consistency (20%), net cash flow (20%), loan repayment (15%), savings rate (15%)
+3. The score determines the customer's **tier** and maximum borrowable amount:
+
+| Score | Tier | Max Credit (XAF) |
+|-------|------|-------------------|
+| ≥ 80% | A - Excellent | 50,000 |
+| ≥ 65% | B - Good | 20,000 |
+| ≥ 50% | C - Fair | 10,000 |
+| ≥ 35% | D - Poor | 1,000 |
+| < 35% | E - Very Poor | 0 |
+
+4. A **K-Means ML model** (trained weekly) groups customers into 5 clusters to validate the rule-based tiers
+5. When a customer applies for a loan, the system **re-scores them in real-time** and generates a recommendation (approve / review carefully / reject)
+6. A **compliance analyst** reviews and makes the final decision — the system never auto-approves
 
 **Quick start:**
 ```bash
@@ -158,7 +168,7 @@ docker compose exec api python -c "from app.tasks.credit_scoring import compute_
 curl -X POST http://localhost:8000/api/v1/credit/request \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"fineract_client_id":"CLI-001","requested_amount":500000}'
+  -d '{"fineract_client_id":"CLI-001","requested_amount":15000}'
 ```
 
 **Detailed documentation:**

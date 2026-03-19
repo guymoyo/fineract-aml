@@ -51,10 +51,10 @@ class Settings(BaseSettings):
     credit_tier_d_min_score: float = 0.35
     # Below 0.35 = Tier E (Very Poor)
 
-    credit_tier_a_max_amount: float = 5_000_000.0  # XAF
-    credit_tier_b_max_amount: float = 2_000_000.0
-    credit_tier_c_max_amount: float = 1_000_000.0
-    credit_tier_d_max_amount: float = 500_000.0
+    credit_tier_a_max_amount: float = 50_000.0  # XAF
+    credit_tier_b_max_amount: float = 20_000.0
+    credit_tier_c_max_amount: float = 10_000.0
+    credit_tier_d_max_amount: float = 1_000.0
     credit_tier_e_max_amount: float = 0.0
 
     # Credit scoring weights (must sum to 1.0)

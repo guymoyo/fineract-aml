@@ -31,7 +31,7 @@ GET /credit/profiles?page=1&page_size=25&segment=tier_a
       "fineract_client_id": "CLI-001",
       "credit_score": 0.82,
       "segment": "tier_a",
-      "max_credit_amount": 5000000.0,
+      "max_credit_amount": 50000.0,
       "score_components": "{\"deposit_consistency\": 0.88, ...}",
       "ml_cluster_id": 2,
       "ml_segment_suggestion": "tier_a",
@@ -98,7 +98,7 @@ POST /credit/request
 ```json
 {
   "fineract_client_id": "CLI-001",
-  "requested_amount": 500000.0
+  "requested_amount": 15000.0
 }
 ```
 
@@ -112,10 +112,10 @@ POST /credit/request
 {
   "id": "uuid",
   "fineract_client_id": "CLI-001",
-  "requested_amount": 500000.0,
+  "requested_amount": 15000.0,
   "credit_score_at_request": 0.72,
   "segment_at_request": "tier_b",
-  "max_credit_at_request": 2000000.0,
+  "max_credit_at_request": 20000.0,
   "recommendation": "approve",
   "status": "pending_review",
   "reviewer_notes": null,

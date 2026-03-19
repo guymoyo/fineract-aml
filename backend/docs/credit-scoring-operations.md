@@ -19,10 +19,10 @@ Scores below `tier_d_min_score` fall into Tier E (Very Poor).
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `credit_tier_a_max_amount` | 5,000,000 | Max credit for Tier A |
-| `credit_tier_b_max_amount` | 2,000,000 | Max credit for Tier B |
-| `credit_tier_c_max_amount` | 1,000,000 | Max credit for Tier C |
-| `credit_tier_d_max_amount` | 500,000 | Max credit for Tier D |
+| `credit_tier_a_max_amount` | 50,000 | Max credit for Tier A |
+| `credit_tier_b_max_amount` | 20,000 | Max credit for Tier B |
+| `credit_tier_c_max_amount` | 10,000 | Max credit for Tier C |
+| `credit_tier_d_max_amount` | 1,000 | Max credit for Tier D |
 | `credit_tier_e_max_amount` | 0 | Tier E customers cannot borrow |
 
 ### Scoring Weights
@@ -90,7 +90,7 @@ evaluate_credit_request.delay('CLI-001')
 curl -X POST http://localhost:8000/api/v1/credit/request \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"fineract_client_id": "CLI-001", "requested_amount": 500000}'
+  -d '{"fineract_client_id": "CLI-001", "requested_amount": 15000}'
 ```
 
 ### Approve / Reject a Credit Request
@@ -115,7 +115,7 @@ curl http://localhost:8000/api/v1/credit/analytics \
    ```env
    AML_CREDIT_TIER_A_MIN_SCORE=0.85
    AML_CREDIT_TIER_B_MIN_SCORE=0.70
-   AML_CREDIT_TIER_A_MAX_AMOUNT=6000000
+   AML_CREDIT_TIER_A_MAX_AMOUNT=75000
    ```
 
 2. Restart the API and Celery services:
