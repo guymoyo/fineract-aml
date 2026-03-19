@@ -1,6 +1,6 @@
 /** Core domain types matching the backend schemas. */
 
-export type TransactionType = "deposit" | "withdrawal" | "transfer";
+export type TransactionType = "deposit" | "withdrawal" | "transfer" | "loan_disbursement" | "loan_repayment";
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 
 export type AlertStatus =
@@ -144,4 +144,70 @@ export interface CaseCreateRequest {
 export interface LoginRequest {
   username: string;
   password: string;
+}
+
+// ── Credit Scoring ───────────────────────────────────────
+
+export type CreditSegment = "tier_a" | "tier_b" | "tier_c" | "tier_d" | "tier_e";
+export type CreditRequestStatus = "pending_review" | "approved" | "rejected" | "expired";
+export type CreditRecommendation = "approve" | "review_carefully" | "reject";
+export type ScoringMethod = "rule_based" | "ml_cluster" | "hybrid";
+
+export interface CreditProfile {
+  id: string;
+  fineract_client_id: string;
+  credit_score: number;
+  segment: CreditSegment;
+  max_credit_amount: number;
+  score_components: string | null;
+  ml_cluster_id: number | null;
+  ml_segment_suggestion: CreditSegment | null;
+  scoring_method: ScoringMethod;
+  last_computed_at: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreditRequest {
+  id: string;
+  fineract_client_id: string;
+  requested_amount: number;
+  credit_score_at_request: number;
+  segment_at_request: CreditSegment;
+  max_credit_at_request: number;
+  recommendation: CreditRecommendation;
+  status: CreditRequestStatus;
+  reviewer_notes: string | null;
+  assigned_to: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreditSegmentStats {
+  segment: CreditSegment;
+  count: number;
+  avg_score: number;
+  avg_max_amount: number;
+}
+
+export interface CreditAnalytics {
+  segment_distribution: CreditSegmentStats[];
+  total_profiles: number;
+  avg_credit_score: number;
+  total_pending_requests: number;
+  total_approved: number;
+  total_rejected: number;
+}
+
+export interface CreditRequestCreateBody {
+  fineract_client_id: string;
+  requested_amount: number;
+}
+
+export interface CreditReviewActionBody {
+  status: "approved" | "rejected";
+  reviewer_notes?: string;
 }

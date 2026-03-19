@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import alerts, auth, cases, transactions, webhook
+from app.api import alerts, auth, cases, credit, transactions, webhook
 from app.core.config import settings
 
 logging.basicConfig(
@@ -35,6 +35,7 @@ app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(transactions.router, prefix=settings.api_prefix)
 app.include_router(alerts.router, prefix=settings.api_prefix)
 app.include_router(cases.router, prefix=settings.api_prefix)
+app.include_router(credit.router, prefix=settings.api_prefix)
 
 
 @app.get("/health")

@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { format, formatDistanceToNow } from "date-fns";
-import type { AlertStatus, CaseStatus, RiskLevel } from "../api/types";
+import type { AlertStatus, CaseStatus, CreditRecommendation, CreditRequestStatus, CreditSegment, RiskLevel } from "../api/types";
 
 export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
@@ -77,4 +77,54 @@ export function caseStatusColor(status: CaseStatus): string {
 
 export function formatStatusLabel(status: string): string {
   return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function creditSegmentColor(segment: CreditSegment): string {
+  switch (segment) {
+    case "tier_a":
+      return "text-green-700 bg-green-50 border-green-200";
+    case "tier_b":
+      return "text-blue-700 bg-blue-50 border-blue-200";
+    case "tier_c":
+      return "text-amber-700 bg-amber-50 border-amber-200";
+    case "tier_d":
+      return "text-orange-700 bg-orange-50 border-orange-200";
+    case "tier_e":
+      return "text-red-700 bg-red-50 border-red-200";
+  }
+}
+
+export function creditSegmentLabel(segment: CreditSegment): string {
+  const labels: Record<CreditSegment, string> = {
+    tier_a: "Tier A - Excellent",
+    tier_b: "Tier B - Good",
+    tier_c: "Tier C - Fair",
+    tier_d: "Tier D - Poor",
+    tier_e: "Tier E - Very Poor",
+  };
+  return labels[segment];
+}
+
+export function creditRequestStatusColor(status: CreditRequestStatus): string {
+  switch (status) {
+    case "pending_review":
+      return "text-amber-700 bg-amber-50 border-amber-200";
+    case "approved":
+      return "text-green-700 bg-green-50 border-green-200";
+    case "rejected":
+      return "text-red-700 bg-red-50 border-red-200";
+    case "expired":
+      return "text-gray-500 bg-gray-50 border-gray-200";
+  }
+}
+
+export function creditRecommendationColor(rec: CreditRecommendation): string {
+  switch (rec) {
+    case "approve":
+      return "text-green-700 bg-green-50 border-green-200";
+    case "review_carefully":
+      return "text-amber-700 bg-amber-50 border-amber-200";
+    case "reject":
+      return "text-red-700 bg-red-50 border-red-200";
+  }
 }

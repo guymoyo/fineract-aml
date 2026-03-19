@@ -34,6 +34,9 @@ Real-time Anti-Money Laundering (AML) and fraud detection service for [Apache Fi
 - **Compliance Dashboard** — review alerts, investigate cases, label transactions
 - **Human-in-the-Loop** — analyst decisions become training data for continuous ML improvement
 - **Case Management** — group related suspicious transactions into investigation cases
+- **Credit Scoring** — rule-based + ML customer credit scoring with tier segmentation
+- **Credit Request Review** — compliance workflow for loan applications with auto-recommendations
+- **Transfer Fraud Detection** — circular transfer, new counterparty, and rapid pair detection
 - **MLflow Integration** — model versioning, experiment tracking, metrics logging
 
 ## Quick Start
@@ -110,12 +113,14 @@ fineract-aml/
 │   │   │   ├── alerts.py      # Alert management
 │   │   │   ├── transactions.py# Transaction queries
 │   │   │   ├── cases.py       # Case management
+│   │   │   ├── credit.py      # Credit scoring & requests
 │   │   │   └── auth.py        # Authentication
 │   │   ├── core/              # Config, database, security
 │   │   ├── features/          # Feature engineering for ML
 │   │   ├── ml/                # ML models
 │   │   │   ├── anomaly_detector.py  # Isolation Forest (unsupervised)
-│   │   │   └── fraud_classifier.py  # XGBoost (supervised)
+│   │   │   ├── fraud_classifier.py  # XGBoost (supervised)
+│   │   │   └── credit_scorer.py    # Credit scoring + K-Means clustering
 │   │   ├── models/            # SQLAlchemy database models
 │   │   ├── rules/             # Deterministic rule engine
 │   │   ├── schemas/           # Pydantic request/response schemas
@@ -133,10 +138,39 @@ fineract-aml/
 └── .env.example
 ```
 
+## Credit Scoring
+
+The system computes credit scores for customers based on their transaction behavior, segments them into tiers (A–E), and provides compliance-reviewed credit request workflows.
+
+**How it works:**
+1. **Nightly batch scoring** extracts 19 behavioral features from each customer's 180-day transaction history
+2. **Rule-based scoring** computes a weighted credit score (0–1) and assigns a tier
+3. **ML clustering** (K-Means, trained weekly) validates rule-based segments
+4. **Credit requests** trigger real-time re-scoring and generate auto-recommendations
+5. **Compliance analysts** review and approve/reject via the dashboard
+
+**Quick start:**
+```bash
+# Run nightly scoring
+docker compose exec api python -c "from app.tasks.credit_scoring import compute_all_credit_scores; compute_all_credit_scores.delay()"
+
+# Submit a credit request
+curl -X POST http://localhost:8000/api/v1/credit/request \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"fineract_client_id":"CLI-001","requested_amount":500000}'
+```
+
+**Detailed documentation:**
+- [Credit Scoring API Reference](backend/docs/credit-scoring-api.md)
+- [Architecture & Scoring Methodology](backend/docs/credit-scoring-architecture.md)
+- [Operations Guide & Configuration](backend/docs/credit-scoring-operations.md)
+
 ## Documentation
 
 - [Architecture Overview](docs/architecture/overview.md)
 - [API Reference](docs/api/endpoints.md)
+- [Credit Scoring API](backend/docs/credit-scoring-api.md)
 - [Fineract Webhook Setup](docs/guides/fineract-webhook-setup.md)
 - [ML Pipeline Guide](docs/ml/pipeline.md)
 - [Deployment Guide](docs/guides/deployment.md)
@@ -150,7 +184,7 @@ fineract-aml/
 | Database | PostgreSQL 16 |
 | Task Queue | Celery + Redis |
 | ML | scikit-learn, XGBoost, MLflow |
-| Dashboard | React (planned) |
+| Dashboard | React, TanStack Router, TanStack Query |
 | Containers | Docker, Kubernetes |
 
 ## License

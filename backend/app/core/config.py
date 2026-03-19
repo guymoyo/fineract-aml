@@ -44,6 +44,32 @@ class Settings(BaseSettings):
     # Currency
     default_currency: str = "XAF"
 
+    # Credit scoring tiers
+    credit_tier_a_min_score: float = 0.8
+    credit_tier_b_min_score: float = 0.65
+    credit_tier_c_min_score: float = 0.5
+    credit_tier_d_min_score: float = 0.35
+    # Below 0.35 = Tier E (Very Poor)
+
+    credit_tier_a_max_amount: float = 5_000_000.0  # XAF
+    credit_tier_b_max_amount: float = 2_000_000.0
+    credit_tier_c_max_amount: float = 1_000_000.0
+    credit_tier_d_max_amount: float = 500_000.0
+    credit_tier_e_max_amount: float = 0.0
+
+    # Credit scoring weights (must sum to 1.0)
+    credit_weight_deposit_consistency: float = 0.20
+    credit_weight_net_flow: float = 0.20
+    credit_weight_savings_rate: float = 0.15
+    credit_weight_tx_frequency: float = 0.10
+    credit_weight_account_age: float = 0.10
+    credit_weight_repayment_rate: float = 0.15
+    credit_weight_fraud_history: float = 0.10
+
+    # Credit batch scoring
+    credit_scoring_batch_size: int = 500
+    credit_min_transactions: int = 5
+
     # Rule engine
     max_transaction_amount: float = 10000.0
     rapid_transaction_window_minutes: int = 60

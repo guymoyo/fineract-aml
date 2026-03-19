@@ -7,6 +7,11 @@ import type {
   AlertStatus,
   Case,
   CaseStatus,
+  CreditAnalytics,
+  CreditProfile,
+  CreditRequest,
+  CreditRequestStatus,
+  CreditSegment,
   PaginatedResponse,
   RiskLevel,
   Transaction,
@@ -35,6 +40,16 @@ export const queryKeys = {
     list: (page: number, status?: CaseStatus) =>
       ["cases", "list", page, status] as const,
     detail: (id: string) => ["cases", id] as const,
+  },
+  credit: {
+    all: ["credit"] as const,
+    profiles: (page: number, segment?: CreditSegment) =>
+      ["credit", "profiles", page, segment] as const,
+    profile: (clientId: string) => ["credit", "profiles", clientId] as const,
+    requests: (page: number, status?: CreditRequestStatus) =>
+      ["credit", "requests", page, status] as const,
+    request: (id: string) => ["credit", "requests", id] as const,
+    analytics: ["credit", "analytics"] as const,
   },
   auth: {
     me: ["auth", "me"] as const,
@@ -104,6 +119,49 @@ export function caseDetailOptions(id: string) {
   return queryOptions({
     queryKey: queryKeys.cases.detail(id),
     queryFn: () => api.get<Case>(`/cases/${id}`),
+  });
+}
+
+// ── Credit Query Options ──────────────────────────────────
+
+export function creditProfileListOptions(page = 1, segment?: CreditSegment) {
+  const params = new URLSearchParams({ page: String(page), page_size: "25" });
+  if (segment) params.set("segment", segment);
+
+  return queryOptions({
+    queryKey: queryKeys.credit.profiles(page, segment),
+    queryFn: () =>
+      api.get<PaginatedResponse<CreditProfile>>(
+        `/credit/profiles?${params.toString()}`,
+      ),
+  });
+}
+
+export function creditProfileDetailOptions(clientId: string) {
+  return queryOptions({
+    queryKey: queryKeys.credit.profile(clientId),
+    queryFn: () => api.get<CreditProfile>(`/credit/profiles/${clientId}`),
+  });
+}
+
+export function creditRequestListOptions(page = 1, status?: CreditRequestStatus) {
+  const params = new URLSearchParams({ page: String(page), page_size: "25" });
+  if (status) params.set("status", status);
+
+  return queryOptions({
+    queryKey: queryKeys.credit.requests(page, status),
+    queryFn: () =>
+      api.get<PaginatedResponse<CreditRequest>>(
+        `/credit/requests?${params.toString()}`,
+      ),
+  });
+}
+
+export function creditAnalyticsOptions() {
+  return queryOptions({
+    queryKey: queryKeys.credit.analytics,
+    queryFn: () => api.get<CreditAnalytics>("/credit/analytics"),
+    refetchInterval: 60_000,
   });
 }
 

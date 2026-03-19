@@ -9,6 +9,10 @@ import type {
   Case,
   CaseCreateRequest,
   CaseStatus,
+  CreditProfile,
+  CreditRequest,
+  CreditRequestCreateBody,
+  CreditReviewActionBody,
   LoginRequest,
   Review,
   ReviewCreateRequest,
@@ -88,6 +92,41 @@ export function useUpdateCaseStatus(caseId: string) {
       api.patch<Case>(`/cases/${caseId}/status`, { status }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.cases.all });
+    },
+  });
+}
+
+// ── Credit Scoring Mutations ─────────────────────────────
+
+export function useCreateCreditRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreditRequestCreateBody) =>
+      api.post<CreditRequest>("/credit/request", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.credit.all });
+    },
+  });
+}
+
+export function useReviewCreditRequest(requestId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreditReviewActionBody) =>
+      api.put<CreditRequest>(`/credit/requests/${requestId}/review`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.credit.all });
+    },
+  });
+}
+
+export function useRefreshCreditProfile(clientId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<CreditProfile>(`/credit/profiles/${clientId}/refresh`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.credit.all });
     },
   });
 }

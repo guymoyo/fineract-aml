@@ -90,6 +90,12 @@ class RuleEngine:
             self._check_new_ip(transaction, account_history_24h or account_history)
         )
 
+        # Transfer-specific rules (only for transfer transactions)
+        history_24h = account_history_24h or account_history
+        result.results.append(self._check_circular_transfer(transaction, history_24h))
+        result.results.append(self._check_new_counterparty(transaction, history_24h))
+        result.results.append(self._check_rapid_pair_transfers(transaction, history_24h))
+
         if result.triggered_rules:
             logger.info(
                 "Transaction %s triggered %d rules: %s",
@@ -221,4 +227,109 @@ class RuleEngine:
             severity=0.5 if is_new else 0.0,
             details=f"IP {current_ip} {'is new' if is_new else 'is known'} for account "
             f"(known IPs: {len(known_ips)})",
+        )
+
+    def _check_circular_transfer(
+        self, tx: Transaction, history: list[Transaction]
+    ) -> RuleResult:
+        """Detect circular transfer patterns (A->B->A) indicating layering.
+
+        If the current transaction is a transfer TO counterparty B, check
+        whether B has previously sent money BACK to this account.
+        """
+        tx_type = getattr(tx, "transaction_type", None)
+        tx_type_val = tx_type.value if hasattr(tx_type, "value") else str(tx_type)
+        counterparty = getattr(tx, "counterparty_account_id", None)
+
+        if tx_type_val != "transfer" or not counterparty:
+            return RuleResult(
+                rule_name="circular_transfer",
+                category="transfer",
+                triggered=False,
+                severity=0.0,
+                details="Not a transfer or no counterparty",
+            )
+
+        # Check if counterparty has sent money to this account in 24h history
+        incoming_from_counterparty = [
+            t for t in history
+            if getattr(t, "counterparty_account_id", None) == counterparty
+            and t.id != tx.id
+        ]
+        is_circular = len(incoming_from_counterparty) > 0
+        return RuleResult(
+            rule_name="circular_transfer",
+            category="transfer",
+            triggered=is_circular,
+            severity=0.7 if is_circular else 0.0,
+            details=f"Circular transfer detected: {len(incoming_from_counterparty)} "
+            f"prior transactions with counterparty {counterparty}"
+            if is_circular
+            else f"No circular pattern with counterparty {counterparty}",
+        )
+
+    def _check_new_counterparty(
+        self, tx: Transaction, history: list[Transaction]
+    ) -> RuleResult:
+        """Flag first-time transfers to an unknown counterparty account."""
+        tx_type = getattr(tx, "transaction_type", None)
+        tx_type_val = tx_type.value if hasattr(tx_type, "value") else str(tx_type)
+        counterparty = getattr(tx, "counterparty_account_id", None)
+
+        if tx_type_val != "transfer" or not counterparty:
+            return RuleResult(
+                rule_name="new_counterparty_transfer",
+                category="transfer",
+                triggered=False,
+                severity=0.0,
+                details="Not a transfer or no counterparty",
+            )
+
+        known_counterparties = {
+            getattr(t, "counterparty_account_id", None)
+            for t in history
+            if getattr(t, "counterparty_account_id", None) and t.id != tx.id
+        }
+        is_new = counterparty not in known_counterparties and len(known_counterparties) > 0
+        return RuleResult(
+            rule_name="new_counterparty_transfer",
+            category="transfer",
+            triggered=is_new,
+            severity=0.4 if is_new else 0.0,
+            details=f"Transfer to {'new' if is_new else 'known'} counterparty "
+            f"{counterparty} (known: {len(known_counterparties)})",
+        )
+
+    def _check_rapid_pair_transfers(
+        self, tx: Transaction, history: list[Transaction]
+    ) -> RuleResult:
+        """Flag multiple transfers between the same pair of accounts in 24h."""
+        tx_type = getattr(tx, "transaction_type", None)
+        tx_type_val = tx_type.value if hasattr(tx_type, "value") else str(tx_type)
+        counterparty = getattr(tx, "counterparty_account_id", None)
+
+        if tx_type_val != "transfer" or not counterparty:
+            return RuleResult(
+                rule_name="rapid_pair_transfers",
+                category="transfer",
+                triggered=False,
+                severity=0.0,
+                details="Not a transfer or no counterparty",
+            )
+
+        pair_transfers = [
+            t for t in history
+            if getattr(t, "counterparty_account_id", None) == counterparty
+            and t.id != tx.id
+        ]
+        count = len(pair_transfers) + 1  # include current
+        triggered = count >= 3
+        severity = min(count / 6.0, 1.0) if triggered else 0.0
+        return RuleResult(
+            rule_name="rapid_pair_transfers",
+            category="transfer",
+            triggered=triggered,
+            severity=severity,
+            details=f"{count} transfers with counterparty {counterparty} in 24h "
+            f"(threshold: 3)",
         )

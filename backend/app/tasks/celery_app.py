@@ -28,7 +28,19 @@ celery_app.conf.update(
             "task": "app.tasks.training.retrain_fraud_classifier",
             "schedule": 604800.0,  # Weekly
         },
+        "compute-credit-scores": {
+            "task": "app.tasks.credit_scoring.compute_all_credit_scores",
+            "schedule": 86400.0,  # Daily (nightly)
+        },
+        "retrain-credit-cluster-model": {
+            "task": "app.tasks.credit_scoring.retrain_credit_cluster_model",
+            "schedule": 604800.0,  # Weekly
+        },
     },
 )
 
-celery_app.conf.update(include=["app.tasks.analysis", "app.tasks.training"])
+celery_app.conf.update(include=[
+    "app.tasks.analysis",
+    "app.tasks.training",
+    "app.tasks.credit_scoring",
+])
