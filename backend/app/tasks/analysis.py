@@ -30,9 +30,10 @@ async def _analyze(transaction_id: str):
     from datetime import timedelta
 
     from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
     from uuid import UUID
 
-    from app.core.database import async_session
+    from app.core.config import settings
     from app.features.extractor import FeatureExtractor
     from app.ml.anomaly_detector import AnomalyDetector
     from app.ml.fraud_classifier import FraudClassifier
@@ -44,7 +45,11 @@ async def _analyze(transaction_id: str):
 
     tx_uuid = UUID(transaction_id)
 
-    async with async_session() as db:
+    # Create a fresh engine per task to avoid fork-safety issues with asyncpg
+    task_engine = create_async_engine(settings.database_url, pool_size=5, max_overflow=2)
+    task_session = async_sessionmaker(task_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with task_session() as db:
         # 1. Load the transaction
         result = await db.execute(
             select(Transaction).where(Transaction.id == tx_uuid)
@@ -97,9 +102,12 @@ async def _analyze(transaction_id: str):
         # Priority: ML model > anomaly detection > rules
         if fraud_classifier.is_ready:
             final_score = ml_score * 0.5 + anomaly_score * 0.3 + rule_result.combined_score * 0.2
-        else:
-            # No ML model yet — rely more on rules + anomaly detection
+        elif anomaly_score > 0.0:
+            # No ML model yet — rely on rules + anomaly detection
             final_score = anomaly_score * 0.5 + rule_result.combined_score * 0.5
+        else:
+            # No trained models at all — rules are the only signal
+            final_score = rule_result.combined_score
 
         # 8. Update transaction risk score
         await service.update_risk_score(
@@ -131,6 +139,8 @@ async def _analyze(transaction_id: str):
             ml_score,
             final_score,
         )
+
+    await task_engine.dispose()
 
 
 @celery_app.task(name="app.tasks.analysis.analyze_transaction", bind=True, max_retries=3)

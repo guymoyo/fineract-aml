@@ -33,7 +33,7 @@ class Case(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[CaseStatus] = mapped_column(
-        Enum(CaseStatus), default=CaseStatus.OPEN, nullable=False
+        Enum(CaseStatus, values_callable=lambda e: [x.value for x in e]), default=CaseStatus.OPEN, nullable=False
     )
     assigned_to: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id")

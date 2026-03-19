@@ -4,7 +4,6 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   AlertTriangle,
   BarChart3,
-  FileSearch,
   FolderOpen,
   LayoutDashboard,
   LogOut,

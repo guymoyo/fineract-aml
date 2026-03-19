@@ -43,7 +43,7 @@ class Transaction(Base, TimestampMixin):
     )
 
     transaction_type: Mapped[TransactionType] = mapped_column(
-        Enum(TransactionType), nullable=False
+        Enum(TransactionType, values_callable=lambda e: [x.value for x in e]), nullable=False
     )
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
@@ -61,7 +61,7 @@ class Transaction(Base, TimestampMixin):
 
     # Risk scoring
     risk_score: Mapped[float | None] = mapped_column(Float)
-    risk_level: Mapped[RiskLevel | None] = mapped_column(Enum(RiskLevel))
+    risk_level: Mapped[RiskLevel | None] = mapped_column(Enum(RiskLevel, values_callable=lambda e: [x.value for x in e]))
     anomaly_score: Mapped[float | None] = mapped_column(Float)
     model_version: Mapped[str | None] = mapped_column(String(50))
 

@@ -38,7 +38,7 @@ class Review(Base, TimestampMixin):
     )
 
     decision: Mapped[ReviewDecision] = mapped_column(
-        Enum(ReviewDecision), nullable=False
+        Enum(ReviewDecision, values_callable=lambda e: [x.value for x in e]), nullable=False
     )
     notes: Mapped[str | None] = mapped_column(Text)
     evidence: Mapped[str | None] = mapped_column(Text)

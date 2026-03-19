@@ -39,9 +39,9 @@ class Alert(Base, TimestampMixin):
     )
 
     status: Mapped[AlertStatus] = mapped_column(
-        Enum(AlertStatus), default=AlertStatus.PENDING, nullable=False
+        Enum(AlertStatus, values_callable=lambda e: [x.value for x in e]), default=AlertStatus.PENDING, nullable=False
     )
-    source: Mapped[AlertSource] = mapped_column(Enum(AlertSource), nullable=False)
+    source: Mapped[AlertSource] = mapped_column(Enum(AlertSource, values_callable=lambda e: [x.value for x in e]), nullable=False)
     risk_score: Mapped[float] = mapped_column(Float, nullable=False)
 
     title: Mapped[str] = mapped_column(String(255), nullable=False)
