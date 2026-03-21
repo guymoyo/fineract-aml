@@ -31,9 +31,15 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Minimum labeled samples needed before training a supervised model
-MIN_FRAUD_SAMPLES = 50
-MIN_TOTAL_SAMPLES = 200
+# Minimum labeled samples needed before training a supervised model.
+# With 22 features and 5-fold CV, we need enough fraud samples to have
+# statistically meaningful test folds (~40+ fraud per fold).
+MIN_FRAUD_SAMPLES = 200
+MIN_TOTAL_SAMPLES = 1000
+
+# Validation gates — new models must meet these thresholds to be deployed
+MIN_CV_AUC = 0.80
+MAX_CV_AUC_STD = 0.05
 
 
 class FraudClassifier:
@@ -42,6 +48,9 @@ class FraudClassifier:
     Only activated when sufficient labeled data is available.
     Until then, the system relies on rules + anomaly detection.
     """
+
+    MIN_FRAUD_SAMPLES = MIN_FRAUD_SAMPLES
+    MIN_TOTAL_SAMPLES = MIN_TOTAL_SAMPLES
 
     def __init__(self):
         self.model: xgb.XGBClassifier | None = None
@@ -121,16 +130,16 @@ class FraudClassifier:
             for name, score in zip(feature_names, self.model.feature_importances_):
                 importance[name] = float(score)
 
-        self.version = f"v{len(labels)}_{n_fraud}f"
-        self._save()
+        cv_auc_mean = float(np.mean(cv_scores))
+        cv_auc_std = float(np.std(cv_scores))
 
         metrics = {
-            "version": self.version,
+            "version": None,
             "n_samples": len(labels),
             "n_fraud": n_fraud,
             "n_legitimate": n_legit,
-            "cv_auc_mean": float(np.mean(cv_scores)),
-            "cv_auc_std": float(np.std(cv_scores)),
+            "cv_auc_mean": cv_auc_mean,
+            "cv_auc_std": cv_auc_std,
             "train_auc": float(roc_auc_score(labels, probabilities)),
             "train_precision": float(precision_score(labels, predictions)),
             "train_recall": float(recall_score(labels, predictions)),
@@ -139,8 +148,30 @@ class FraudClassifier:
             "classification_report": classification_report(
                 labels, predictions, target_names=["legitimate", "fraud"]
             ),
+            "deployed": False,
         }
-        logger.info("Fraud classifier trained: AUC=%.4f", metrics["cv_auc_mean"])
+
+        # Validation gate: only deploy if model meets quality thresholds
+        if cv_auc_mean < MIN_CV_AUC or cv_auc_std > MAX_CV_AUC_STD:
+            logger.warning(
+                "Model failed validation gate: cv_auc=%.4f (min %.2f), cv_std=%.4f (max %.2f). "
+                "Keeping previous model.",
+                cv_auc_mean,
+                MIN_CV_AUC,
+                cv_auc_std,
+                MAX_CV_AUC_STD,
+            )
+            # Restore previous model if it existed
+            self.model = None
+            self._load()
+            return metrics
+
+        self.version = f"v{len(labels)}_{n_fraud}f"
+        metrics["version"] = self.version
+        metrics["deployed"] = True
+        self._save()
+
+        logger.info("Fraud classifier trained and deployed: AUC=%.4f", cv_auc_mean)
         return metrics
 
     def predict(self, features: np.ndarray) -> tuple[float, str]:
@@ -158,9 +189,12 @@ class FraudClassifier:
     def _save(self):
         model_dir = Path(settings.model_path)
         model_dir.mkdir(parents=True, exist_ok=True)
+        # Atomic write: dump to temp file, then rename to avoid read corruption
+        tmp_path = self._model_path.with_suffix(".joblib.tmp")
         joblib.dump(
-            {"model": self.model, "version": self.version}, self._model_path
+            {"model": self.model, "version": self.version}, tmp_path
         )
+        tmp_path.replace(self._model_path)
         logger.info("Fraud classifier saved: %s", self.version)
 
     def _load(self):

@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
+    # CORS
+    cors_origins: str = "http://localhost:3000"  # Comma-separated allowed origins
+
     # Fineract
     fineract_base_url: str = "https://localhost:8443/fineract-provider/api/v1"
     fineract_webhook_secret: str = "change-me-in-production"
@@ -26,6 +29,7 @@ class Settings(BaseSettings):
     # ML
     model_path: str = "./models"
     anomaly_threshold: float = 0.7
+    anomaly_contamination: float = 0.01  # Expected fraud rate (~0.1-0.5% in real data)
     risk_score_high: float = 0.8
     risk_score_medium: float = 0.5
 
@@ -76,6 +80,13 @@ class Settings(BaseSettings):
     rapid_transaction_count: int = 10
     structuring_threshold: float = 9500.0
     new_account_age_days: int = 30
+
+    # CTR (Currency Transaction Report) — auto-file threshold
+    ctr_threshold: float = 5_000_000.0  # XAF — CEMAC regulatory threshold
+
+    # Sanctions screening
+    sanctions_screening_enabled: bool = True
+    sanctions_match_threshold: float = 0.85
 
     model_config = {"env_file": ".env", "env_prefix": "AML_"}
 

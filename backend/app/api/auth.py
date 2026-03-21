@@ -1,22 +1,27 @@
 """Authentication endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from passlib.context import CryptContext
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import create_access_token, verify_token
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.auth import LoginRequest, TokenResponse, UserCreate, UserResponse
+from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def login(request: Request, data: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Authenticate and return a JWT token."""
     result = await db.execute(select(User).where(User.username == data.username))
     user = result.scalar_one_or_none()
@@ -46,9 +51,15 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def register(
     data: UserCreate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(verify_token),
+    token_data: dict = Depends(verify_token),
 ):
-    """Register a new analyst (requires authentication)."""
+    """Register a new analyst (requires admin or compliance_officer role)."""
+    allowed_roles = {UserRole.ADMIN.value, UserRole.COMPLIANCE_OFFICER.value}
+    if token_data.get("role") not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin or compliance_officer can register new users",
+        )
     user = User(
         username=data.username,
         email=data.email,
@@ -58,6 +69,18 @@ async def register(
     )
     db.add(user)
     await db.flush()
+
+    # Audit log
+    audit = AuditService(db)
+    await audit.log(
+        action="user_created",
+        resource_type="user",
+        resource_id=str(user.id),
+        user_id=token_data.get("sub"),
+        username=token_data.get("username"),
+        details={"new_username": data.username, "role": data.role.value if hasattr(data.role, "value") else str(data.role)},
+    )
+
     return UserResponse.model_validate(user)
 
 

@@ -82,7 +82,7 @@ JOIN reviews r ON r.alert_id = a.id
 WHERE r.decision IN ('confirmed_fraud', 'legitimate')
 ```
 
-**Target**: Accumulate ≥50 confirmed fraud + ≥200 total labeled transactions.
+**Target**: Accumulate ≥200 confirmed fraud + ≥1000 total labeled transactions.
 
 ### Tips for Analysts
 
@@ -176,10 +176,45 @@ To add a new rule:
 3. Call it from `evaluate()`
 4. No retraining needed — rules take effect immediately
 
+## Implemented Enhancements
+
+### Graph-Based Network Analysis (`app/ml/graph_analyzer.py`)
+
+Builds a directed transaction graph (accounts = nodes, transfers = edges) using NetworkX:
+
+- **Cycle detection**: Finds multi-hop money laundering chains (A→B→C→D→A) up to 5 hops
+- **Fan-out/fan-in**: Identifies accounts sending to or receiving from many counterparties
+- **PageRank**: Identifies important nodes in the money flow network (potential mules)
+- **Network features**: 6 per-account features (out_degree, in_degree, total_sent, total_received, pagerank, is_in_cycle)
+
+### Model Drift Detection (`app/ml/drift_detector.py`)
+
+Uses Population Stability Index (PSI) to detect when ML models degrade:
+
+- **Baselines**: Saved after each retraining with feature and score distributions
+- **Checking**: Compares current distributions against baseline during retraining
+- **Thresholds**: PSI < 0.10 (OK), 0.10-0.25 (warning), ≥ 0.25 (critical — retrain immediately)
+- **Integration**: Automatically runs during the retraining pipeline
+
+### Model Validation Gate (`app/ml/fraud_classifier.py`)
+
+New models are only deployed if they meet quality thresholds:
+
+- CV AUC ≥ 0.80 (mean across 5 folds)
+- CV AUC std ≤ 0.05 (stable across folds)
+- If validation fails, the previous model is kept
+
+### MLflow Integration (`app/tasks/training.py`)
+
+Training metrics (AUC, precision, recall, F1, sample counts) are logged to MLflow after each retraining run. Access at `http://localhost:5000`.
+
+### Atomic Model Writes
+
+Model files are written to a temporary file first, then renamed atomically. This prevents read corruption when API pods load a model file while a Celery worker is retraining.
+
 ## Future Enhancements
 
-- **Graph-based analysis** (NetworkX/Neo4j) for detecting circular money flows
 - **Real-time feature store** (Feast/Redis) for sub-millisecond feature lookups
 - **Ensemble models** — combine XGBoost + LightGBM + CatBoost
-- **Concept drift detection** — alert when transaction patterns shift
 - **Active learning** — prioritize labeling the most informative samples
+- **Sequence models** (LSTM/Transformer) for temporal pattern detection

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: fineract-aml
+description: Anti-Money Laundering detection service for Apache Fineract
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - aml
+  - fraud-detection
+  - fineract
+  - compliance
+maintainers:
+  - name: AML Team

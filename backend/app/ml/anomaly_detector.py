@@ -34,16 +34,19 @@ class AnomalyDetector:
         self._model_path = Path(settings.model_path) / "anomaly_detector.joblib"
         self._scaler_path = Path(settings.model_path) / "anomaly_scaler.joblib"
 
-    def train(self, features: np.ndarray, contamination: float = 0.05) -> dict:
+    def train(self, features: np.ndarray, contamination: float | None = None) -> dict:
         """Train the anomaly detector on historical transaction features.
 
         Args:
             features: 2D array of shape (n_transactions, n_features).
-            contamination: Expected proportion of anomalies (default 5%).
+            contamination: Expected proportion of anomalies. Defaults to config value (~1%).
 
         Returns:
             Training metrics.
         """
+        if contamination is None:
+            contamination = settings.anomaly_contamination
+
         self.scaler = StandardScaler()
         scaled_features = self.scaler.fit_transform(features)
 
@@ -98,11 +101,16 @@ class AnomalyDetector:
         return float(np.clip(anomaly_score, 0.0, 1.0))
 
     def _save(self):
-        """Persist model and scaler to disk."""
+        """Persist model and scaler to disk using atomic writes."""
         model_dir = Path(settings.model_path)
         model_dir.mkdir(parents=True, exist_ok=True)
-        joblib.dump(self.model, self._model_path)
-        joblib.dump(self.scaler, self._scaler_path)
+        # Atomic write: dump to temp file, then rename to avoid read corruption
+        tmp_model = self._model_path.with_suffix(".joblib.tmp")
+        tmp_scaler = self._scaler_path.with_suffix(".joblib.tmp")
+        joblib.dump(self.model, tmp_model)
+        joblib.dump(self.scaler, tmp_scaler)
+        tmp_model.replace(self._model_path)
+        tmp_scaler.replace(self._scaler_path)
         logger.info("Anomaly detector saved to %s", self._model_path)
 
     def _load(self):

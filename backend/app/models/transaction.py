@@ -17,6 +17,13 @@ class TransactionType(str, enum.Enum):
     TRANSFER = "transfer"
     LOAN_DISBURSEMENT = "loan_disbursement"
     LOAN_REPAYMENT = "loan_repayment"
+    SHARE_PURCHASE = "share_purchase"
+    SHARE_REDEMPTION = "share_redemption"
+    FIXED_DEPOSIT = "fixed_deposit"
+    RECURRING_DEPOSIT = "recurring_deposit"
+    CHARGE = "charge"
+    FEE = "fee"
+    OTHER = "other"  # Catch-all for unrecognized Fineract event types
 
 
 class RiskLevel(str, enum.Enum):
@@ -66,6 +73,8 @@ class Transaction(Base, TimestampMixin):
     risk_level: Mapped[RiskLevel | None] = mapped_column(Enum(RiskLevel, values_callable=lambda e: [x.value for x in e]))
     anomaly_score: Mapped[float | None] = mapped_column(Float)
     model_version: Mapped[str | None] = mapped_column(String(50))
+    score_explanation: Mapped[str | None] = mapped_column(Text)  # JSON: per-feature contributions
+    shadow_score: Mapped[float | None] = mapped_column(Float)  # Shadow model score for A/B comparison
 
     # Metadata
     description: Mapped[str | None] = mapped_column(Text)

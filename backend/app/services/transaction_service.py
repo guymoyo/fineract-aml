@@ -21,9 +21,27 @@ class TransactionService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def ingest_transaction(self, payload: WebhookPayload) -> Transaction:
-        """Ingest a new transaction from a Fineract webhook."""
+    async def ingest_transaction(self, payload: WebhookPayload) -> tuple[Transaction, bool]:
+        """Ingest a new transaction from a Fineract webhook.
+
+        Returns:
+            (transaction, is_new) — is_new is False if the transaction already existed (idempotent).
+        """
         from app.core.config import settings
+
+        # Idempotency: check if this Fineract transaction was already ingested
+        existing = await self.db.execute(
+            select(Transaction).where(
+                Transaction.fineract_transaction_id == payload.transaction_id
+            )
+        )
+        existing_tx = existing.scalar_one_or_none()
+        if existing_tx:
+            logger.info(
+                "Duplicate webhook for transaction %s — skipping",
+                payload.transaction_id,
+            )
+            return existing_tx, False
 
         transaction = Transaction(
             fineract_transaction_id=payload.transaction_id,
@@ -50,7 +68,7 @@ class TransactionService:
             transaction.amount,
             transaction.transaction_type.value,
         )
-        return transaction
+        return transaction, True
 
     async def update_risk_score(
         self,
@@ -58,6 +76,7 @@ class TransactionService:
         risk_score: float,
         anomaly_score: float | None = None,
         model_version: str | None = None,
+        score_explanation: str | None = None,
     ) -> Transaction:
         """Update the risk score of a transaction and set risk level."""
         from app.core.config import settings
@@ -70,6 +89,7 @@ class TransactionService:
         transaction.risk_score = risk_score
         transaction.anomaly_score = anomaly_score
         transaction.model_version = model_version
+        transaction.score_explanation = score_explanation
 
         if risk_score >= settings.risk_score_high:
             transaction.risk_level = RiskLevel.HIGH

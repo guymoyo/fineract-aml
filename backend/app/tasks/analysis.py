@@ -6,9 +6,13 @@ Pipeline:
 3. Run anomaly detector (unsupervised ML — no labels needed)
 4. Run fraud classifier (supervised ML — only if trained model exists)
 5. Combine scores and create alert if threshold exceeded
+6. Screen counterparty against sanctions/PEP watchlists
+7. Generate CTR if amount exceeds regulatory threshold
+8. Store per-feature score explanation for model explainability
 """
 
 import asyncio
+import json
 import logging
 
 from app.tasks.celery_app import celery_app
@@ -25,10 +29,37 @@ def _run_async(coro):
         loop.close()
 
 
+def _build_score_explanation(
+    features, feature_names, rule_result, anomaly_score, ml_score, final_score,
+) -> dict:
+    """Build a human-readable explanation of the risk score for regulators."""
+    explanation = {
+        "final_score": round(final_score, 4),
+        "components": {
+            "rule_score": round(rule_result.combined_score, 4),
+            "anomaly_score": round(anomaly_score, 4),
+            "ml_score": round(ml_score, 4),
+        },
+        "triggered_rules": [
+            {"name": r.rule_name, "category": r.category, "severity": round(r.severity, 3)}
+            for r in rule_result.triggered_rules
+        ],
+        "top_features": {},
+    }
+
+    # Include top features by absolute value (most influential)
+    if feature_names and features is not None:
+        feature_pairs = list(zip(feature_names, features.tolist()))
+        feature_pairs.sort(key=lambda x: abs(x[1]), reverse=True)
+        explanation["top_features"] = {
+            name: round(val, 4) for name, val in feature_pairs[:10]
+        }
+
+    return explanation
+
+
 async def _analyze(transaction_id: str):
     """Core analysis logic."""
-    from datetime import timedelta
-
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
     from uuid import UUID
@@ -38,9 +69,11 @@ async def _analyze(transaction_id: str):
     from app.ml.anomaly_detector import AnomalyDetector
     from app.ml.fraud_classifier import FraudClassifier
     from app.models.alert import AlertSource
+    from app.models.ctr import CTRStatus, CurrencyTransactionReport
     from app.models.rule_match import RuleMatch
     from app.models.transaction import Transaction
     from app.rules.engine import RuleEngine
+    from app.services.sanctions_service import SanctionsScreeningService
     from app.services.transaction_service import TransactionService
 
     tx_uuid = UUID(transaction_id)
@@ -90,6 +123,7 @@ async def _analyze(transaction_id: str):
         # 5. Run anomaly detector
         anomaly_detector = AnomalyDetector()
         anomaly_score = anomaly_detector.predict(features)
+        has_anomaly_model = anomaly_detector.model is not None
 
         # 6. Run fraud classifier (only if trained)
         fraud_classifier = FraudClassifier()
@@ -102,22 +136,33 @@ async def _analyze(transaction_id: str):
         # Priority: ML model > anomaly detection > rules
         if fraud_classifier.is_ready:
             final_score = ml_score * 0.5 + anomaly_score * 0.3 + rule_result.combined_score * 0.2
-        elif anomaly_score > 0.0:
+        elif has_anomaly_model:
             # No ML model yet — rely on rules + anomaly detection
             final_score = anomaly_score * 0.5 + rule_result.combined_score * 0.5
         else:
             # No trained models at all — rules are the only signal
             final_score = rule_result.combined_score
 
-        # 8. Update transaction risk score
+        # 8. Build score explanation for model explainability
+        explanation = _build_score_explanation(
+            features,
+            FeatureExtractor.get_feature_names(),
+            rule_result,
+            anomaly_score,
+            ml_score,
+            final_score,
+        )
+
+        # 9. Update transaction risk score + explanation
         await service.update_risk_score(
             transaction.id,
             risk_score=final_score,
             anomaly_score=anomaly_score,
             model_version=model_version,
+            score_explanation=json.dumps(explanation),
         )
 
-        # 9. Create alert if needed
+        # 10. Create alert if needed
         source = AlertSource.ML_MODEL if fraud_classifier.is_ready else AlertSource.ANOMALY_DETECTION
         if rule_result.triggered_rules and not fraud_classifier.is_ready:
             source = AlertSource.RULE_ENGINE
@@ -128,6 +173,34 @@ async def _analyze(transaction_id: str):
             source=source,
             triggered_rules=rule_result.rule_names if rule_result.triggered_rules else None,
         )
+
+        # 11. Sanctions/PEP screening for transfers with counterparties
+        if settings.sanctions_screening_enabled and transaction.counterparty_name:
+            sanctions_service = SanctionsScreeningService(db)
+            await sanctions_service.screen_transaction(
+                transaction_id=str(transaction.id),
+                counterparty_name=transaction.counterparty_name,
+                counterparty_account_id=transaction.counterparty_account_id,
+            )
+
+        # 12. Auto-generate CTR if amount exceeds regulatory threshold
+        if transaction.amount >= settings.ctr_threshold:
+            ctr = CurrencyTransactionReport(
+                transaction_id=transaction.id,
+                fineract_client_id=transaction.fineract_client_id,
+                fineract_account_id=transaction.fineract_account_id,
+                amount=transaction.amount,
+                currency=transaction.currency,
+                transaction_type=transaction.transaction_type.value,
+                status=CTRStatus.PENDING,
+            )
+            db.add(ctr)
+            logger.info(
+                "CTR auto-generated for transaction %s (amount=%.2f %s)",
+                transaction.fineract_transaction_id,
+                transaction.amount,
+                transaction.currency,
+            )
 
         await db.commit()
 

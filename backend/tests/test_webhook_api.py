@@ -26,7 +26,9 @@ class TestWebhookEndpoint:
     def test_health_check(self):
         response = client.get("/health")
         assert response.status_code == 200
-        assert response.json()["status"] == "healthy"
+        data = response.json()
+        assert data["status"] in ("healthy", "degraded")
+        assert "checks" in data
 
     def test_root(self):
         response = client.get("/")

@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "aml.labels" . | nindent 4 }}
+data:
+  AML_DEBUG: {{ .Values.config.debug | quote }}
+  AML_API_PREFIX: {{ .Values.config.apiPrefix | quote }}
+  AML_DEFAULT_CURRENCY: {{ .Values.config.defaultCurrency | quote }}
+  AML_RISK_SCORE_HIGH: {{ .Values.config.riskScoreHigh | quote }}
+  AML_RISK_SCORE_MEDIUM: {{ .Values.config.riskScoreMedium | quote }}
+  AML_ANOMALY_CONTAMINATION: {{ .Values.config.anomalyContamination | quote }}
+  AML_MAX_TRANSACTION_AMOUNT: {{ .Values.config.maxTransactionAmount | quote }}
+  AML_STRUCTURING_THRESHOLD: {{ .Values.config.structuringThreshold | quote }}
+  AML_RAPID_TRANSACTION_COUNT: {{ .Values.config.rapidTransactionCount | quote }}
+  AML_RAPID_TRANSACTION_WINDOW_MINUTES: {{ .Values.config.rapidTransactionWindowMinutes | quote }}
+  AML_CTR_THRESHOLD: {{ .Values.config.ctrThreshold | quote }}
+  AML_SANCTIONS_SCREENING_ENABLED: {{ .Values.config.sanctionsScreeningEnabled | quote }}
+  AML_SANCTIONS_MATCH_THRESHOLD: {{ .Values.config.sanctionsMatchThreshold | quote }}
+  AML_CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
+  AML_ACCESS_TOKEN_EXPIRE_MINUTES: {{ .Values.config.accessTokenExpireMinutes | quote }}
+  AML_REDIS_URL: "redis://{{ .Release.Name }}-redis:6379/0"
+  AML_CELERY_BROKER_URL: "redis://{{ .Release.Name }}-redis:6379/1"
+  AML_CELERY_RESULT_BACKEND: "redis://{{ .Release.Name }}-redis:6379/2"
+  AML_MLFLOW_TRACKING_URI: "http://{{ .Release.Name }}-mlflow:5000"
+  AML_MODEL_PATH: "/app/models"

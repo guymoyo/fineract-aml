@@ -3,6 +3,8 @@
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -13,9 +15,11 @@ from app.services.transaction_service import TransactionService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook", tags=["Webhook"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post("/fineract", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("100/minute")
 async def receive_fineract_webhook(
     request: Request,
     payload: WebhookPayload,
@@ -29,8 +33,8 @@ async def receive_fineract_webhook(
     2. Ingests the transaction into the database
     3. Triggers async analysis (rule engine + anomaly detection)
     """
-    # Verify signature in production
-    if settings.fineract_webhook_secret != "change-me-in-production":
+    # Always verify webhook signature unless explicitly in debug mode
+    if not settings.debug:
         if not x_webhook_signature:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -48,15 +52,16 @@ async def receive_fineract_webhook(
         payload.ip_address = request.client.host
 
     service = TransactionService(db)
-    transaction = await service.ingest_transaction(payload)
+    transaction, is_new = await service.ingest_transaction(payload)
 
-    # Trigger async analysis via Celery
-    from app.tasks.analysis import analyze_transaction
+    if is_new:
+        # Only trigger analysis for new transactions (idempotency)
+        from app.tasks.analysis import analyze_transaction
 
-    analyze_transaction.delay(str(transaction.id))
+        analyze_transaction.delay(str(transaction.id))
 
     return {
         "status": "accepted",
         "transaction_id": str(transaction.id),
-        "message": "Transaction queued for AML analysis",
+        "message": "Transaction queued for AML analysis" if is_new else "Transaction already processed",
     }

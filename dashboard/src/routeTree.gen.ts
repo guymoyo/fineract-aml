@@ -13,12 +13,12 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedTransactionsIndexRouteImport } from './routes/_authenticated/transactions/index'
+import { Route as AuthenticatedCreditRequestsIndexRouteImport } from './routes/_authenticated/credit-requests/index'
+import { Route as AuthenticatedCreditProfilesIndexRouteImport } from './routes/_authenticated/credit-profiles/index'
+import { Route as AuthenticatedCreditAnalyticsIndexRouteImport } from './routes/_authenticated/credit-analytics/index'
 import { Route as AuthenticatedCasesIndexRouteImport } from './routes/_authenticated/cases/index'
 import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenticated/alerts/index'
 import { Route as AuthenticatedAlertsAlertIdRouteImport } from './routes/_authenticated/alerts/$alertId'
-import { Route as AuthenticatedCreditProfilesIndexRouteImport } from './routes/_authenticated/credit-profiles/index'
-import { Route as AuthenticatedCreditRequestsIndexRouteImport } from './routes/_authenticated/credit-requests/index'
-import { Route as AuthenticatedCreditAnalyticsIndexRouteImport } from './routes/_authenticated/credit-analytics/index'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -40,6 +40,24 @@ const AuthenticatedTransactionsIndexRoute =
     path: '/transactions/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedCreditRequestsIndexRoute =
+  AuthenticatedCreditRequestsIndexRouteImport.update({
+    id: '/credit-requests/',
+    path: '/credit-requests/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedCreditProfilesIndexRoute =
+  AuthenticatedCreditProfilesIndexRouteImport.update({
+    id: '/credit-profiles/',
+    path: '/credit-profiles/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedCreditAnalyticsIndexRoute =
+  AuthenticatedCreditAnalyticsIndexRouteImport.update({
+    id: '/credit-analytics/',
+    path: '/credit-analytics/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedCasesIndexRoute = AuthenticatedCasesIndexRouteImport.update({
   id: '/cases/',
   path: '/cases/',
@@ -57,24 +75,6 @@ const AuthenticatedAlertsAlertIdRoute =
     path: '/alerts/$alertId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedCreditProfilesIndexRoute =
-  AuthenticatedCreditProfilesIndexRouteImport.update({
-    id: '/credit-profiles/',
-    path: '/credit-profiles/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedCreditRequestsIndexRoute =
-  AuthenticatedCreditRequestsIndexRouteImport.update({
-    id: '/credit-requests/',
-    path: '/credit-requests/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedCreditAnalyticsIndexRoute =
-  AuthenticatedCreditAnalyticsIndexRouteImport.update({
-    id: '/credit-analytics/',
-    path: '/credit-analytics/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -82,10 +82,10 @@ export interface FileRoutesByFullPath {
   '/alerts/$alertId': typeof AuthenticatedAlertsAlertIdRoute
   '/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/cases/': typeof AuthenticatedCasesIndexRoute
-  '/transactions/': typeof AuthenticatedTransactionsIndexRoute
+  '/credit-analytics/': typeof AuthenticatedCreditAnalyticsIndexRoute
   '/credit-profiles/': typeof AuthenticatedCreditProfilesIndexRoute
   '/credit-requests/': typeof AuthenticatedCreditRequestsIndexRoute
-  '/credit-analytics/': typeof AuthenticatedCreditAnalyticsIndexRoute
+  '/transactions/': typeof AuthenticatedTransactionsIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -93,10 +93,10 @@ export interface FileRoutesByTo {
   '/alerts/$alertId': typeof AuthenticatedAlertsAlertIdRoute
   '/alerts': typeof AuthenticatedAlertsIndexRoute
   '/cases': typeof AuthenticatedCasesIndexRoute
-  '/transactions': typeof AuthenticatedTransactionsIndexRoute
+  '/credit-analytics': typeof AuthenticatedCreditAnalyticsIndexRoute
   '/credit-profiles': typeof AuthenticatedCreditProfilesIndexRoute
   '/credit-requests': typeof AuthenticatedCreditRequestsIndexRoute
-  '/credit-analytics': typeof AuthenticatedCreditAnalyticsIndexRoute
+  '/transactions': typeof AuthenticatedTransactionsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -106,10 +106,10 @@ export interface FileRoutesById {
   '/_authenticated/alerts/$alertId': typeof AuthenticatedAlertsAlertIdRoute
   '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/_authenticated/cases/': typeof AuthenticatedCasesIndexRoute
-  '/_authenticated/transactions/': typeof AuthenticatedTransactionsIndexRoute
+  '/_authenticated/credit-analytics/': typeof AuthenticatedCreditAnalyticsIndexRoute
   '/_authenticated/credit-profiles/': typeof AuthenticatedCreditProfilesIndexRoute
   '/_authenticated/credit-requests/': typeof AuthenticatedCreditRequestsIndexRoute
-  '/_authenticated/credit-analytics/': typeof AuthenticatedCreditAnalyticsIndexRoute
+  '/_authenticated/transactions/': typeof AuthenticatedTransactionsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -119,10 +119,10 @@ export interface FileRouteTypes {
     | '/alerts/$alertId'
     | '/alerts/'
     | '/cases/'
-    | '/transactions/'
+    | '/credit-analytics/'
     | '/credit-profiles/'
     | '/credit-requests/'
-    | '/credit-analytics/'
+    | '/transactions/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -130,10 +130,10 @@ export interface FileRouteTypes {
     | '/alerts/$alertId'
     | '/alerts'
     | '/cases'
-    | '/transactions'
+    | '/credit-analytics'
     | '/credit-profiles'
     | '/credit-requests'
-    | '/credit-analytics'
+    | '/transactions'
   id:
     | '__root__'
     | '/_authenticated'
@@ -142,10 +142,10 @@ export interface FileRouteTypes {
     | '/_authenticated/alerts/$alertId'
     | '/_authenticated/alerts/'
     | '/_authenticated/cases/'
-    | '/_authenticated/transactions/'
+    | '/_authenticated/credit-analytics/'
     | '/_authenticated/credit-profiles/'
     | '/_authenticated/credit-requests/'
-    | '/_authenticated/credit-analytics/'
+    | '/_authenticated/transactions/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -183,6 +183,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTransactionsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/credit-requests/': {
+      id: '/_authenticated/credit-requests/'
+      path: '/credit-requests'
+      fullPath: '/credit-requests/'
+      preLoaderRoute: typeof AuthenticatedCreditRequestsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/credit-profiles/': {
+      id: '/_authenticated/credit-profiles/'
+      path: '/credit-profiles'
+      fullPath: '/credit-profiles/'
+      preLoaderRoute: typeof AuthenticatedCreditProfilesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/credit-analytics/': {
+      id: '/_authenticated/credit-analytics/'
+      path: '/credit-analytics'
+      fullPath: '/credit-analytics/'
+      preLoaderRoute: typeof AuthenticatedCreditAnalyticsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/cases/': {
       id: '/_authenticated/cases/'
       path: '/cases'
@@ -204,27 +225,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAlertsAlertIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/credit-profiles/': {
-      id: '/_authenticated/credit-profiles/'
-      path: '/credit-profiles'
-      fullPath: '/credit-profiles/'
-      preLoaderRoute: typeof AuthenticatedCreditProfilesIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/credit-requests/': {
-      id: '/_authenticated/credit-requests/'
-      path: '/credit-requests'
-      fullPath: '/credit-requests/'
-      preLoaderRoute: typeof AuthenticatedCreditRequestsIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/credit-analytics/': {
-      id: '/_authenticated/credit-analytics/'
-      path: '/credit-analytics'
-      fullPath: '/credit-analytics/'
-      preLoaderRoute: typeof AuthenticatedCreditAnalyticsIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
   }
 }
 
@@ -233,10 +233,10 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAlertsAlertIdRoute: typeof AuthenticatedAlertsAlertIdRoute
   AuthenticatedAlertsIndexRoute: typeof AuthenticatedAlertsIndexRoute
   AuthenticatedCasesIndexRoute: typeof AuthenticatedCasesIndexRoute
-  AuthenticatedTransactionsIndexRoute: typeof AuthenticatedTransactionsIndexRoute
+  AuthenticatedCreditAnalyticsIndexRoute: typeof AuthenticatedCreditAnalyticsIndexRoute
   AuthenticatedCreditProfilesIndexRoute: typeof AuthenticatedCreditProfilesIndexRoute
   AuthenticatedCreditRequestsIndexRoute: typeof AuthenticatedCreditRequestsIndexRoute
-  AuthenticatedCreditAnalyticsIndexRoute: typeof AuthenticatedCreditAnalyticsIndexRoute
+  AuthenticatedTransactionsIndexRoute: typeof AuthenticatedTransactionsIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -244,10 +244,11 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAlertsAlertIdRoute: AuthenticatedAlertsAlertIdRoute,
   AuthenticatedAlertsIndexRoute: AuthenticatedAlertsIndexRoute,
   AuthenticatedCasesIndexRoute: AuthenticatedCasesIndexRoute,
-  AuthenticatedTransactionsIndexRoute: AuthenticatedTransactionsIndexRoute,
+  AuthenticatedCreditAnalyticsIndexRoute:
+    AuthenticatedCreditAnalyticsIndexRoute,
   AuthenticatedCreditProfilesIndexRoute: AuthenticatedCreditProfilesIndexRoute,
   AuthenticatedCreditRequestsIndexRoute: AuthenticatedCreditRequestsIndexRoute,
-  AuthenticatedCreditAnalyticsIndexRoute: AuthenticatedCreditAnalyticsIndexRoute,
+  AuthenticatedTransactionsIndexRoute: AuthenticatedTransactionsIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -11,6 +11,7 @@ from app.models.alert import AlertStatus
 from app.schemas.alert import AlertAssign, AlertListResponse, AlertResponse, AlertStatusUpdate
 from app.schemas.review import ReviewCreate, ReviewResponse
 from app.services.alert_service import AlertService
+from app.services.audit_service import AuditService
 
 router = APIRouter(
     prefix="/alerts", tags=["Alerts"], dependencies=[Depends(verify_token)]
@@ -76,6 +77,7 @@ async def update_alert_status(
 async def submit_review(
     alert_id: UUID,
     review_data: ReviewCreate,
+    request: Request,
     token_data: dict = Depends(verify_token),
     db: AsyncSession = Depends(get_db),
 ):
@@ -86,4 +88,17 @@ async def submit_review(
     reviewer_id = UUID(token_data["sub"])
     service = AlertService(db)
     review = await service.submit_review(alert_id, reviewer_id, review_data)
+
+    # Audit log
+    audit = AuditService(db)
+    await audit.log(
+        action="alert_reviewed",
+        resource_type="alert",
+        resource_id=str(alert_id),
+        user_id=token_data.get("sub"),
+        username=token_data.get("username"),
+        details={"decision": review_data.decision, "sar_filed": review_data.sar_filed},
+        ip_address=request.client.host if request.client else None,
+    )
+
     return ReviewResponse.model_validate(review)

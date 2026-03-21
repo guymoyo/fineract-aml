@@ -1,0 +1,71 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: aml-postgres-backup
+  namespace: aml
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backupLimit: 4
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-backup
+              image: postgres:16-alpine
+              env:
+                - name: PGHOST
+                  value: aml-postgres
+                - name: PGPORT
+                  value: "5432"
+                - name: PGDATABASE
+                  value: fineract_aml
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: aml-secrets
+                      key: db-user
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: aml-secrets
+                      key: db-password
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  BACKUP_FILE="/backups/fineract_aml_$(date +%Y%m%d_%H%M%S).sql.gz"
+                  echo "Starting backup to $BACKUP_FILE"
+                  pg_dump --format=custom --compress=9 | gzip > "$BACKUP_FILE"
+                  if [ $? -eq 0 ]; then
+                    echo "Backup completed successfully: $(du -sh $BACKUP_FILE)"
+                    # Remove backups older than 30 days
+                    find /backups -name "fineract_aml_*.sql.gz" -mtime +30 -delete
+                    echo "Old backups cleaned up"
+                  else
+                    echo "Backup FAILED"
+                    exit 1
+                  fi
+              volumeMounts:
+                - name: backup-storage
+                  mountPath: /backups
+          volumes:
+            - name: backup-storage
+              persistentVolumeClaim:
+                claimName: aml-backup-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aml-backup-pvc
+  namespace: aml
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi

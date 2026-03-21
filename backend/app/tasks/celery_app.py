@@ -36,6 +36,18 @@ celery_app.conf.update(
             "task": "app.tasks.credit_scoring.retrain_credit_cluster_model",
             "schedule": 604800.0,  # Weekly
         },
+        "poll-fineract-transactions": {
+            "task": "app.tasks.polling.poll_fineract_transactions",
+            "schedule": 60.0,  # Every 60 seconds (fallback if webhooks fail)
+        },
+        "enforce-data-retention": {
+            "task": "app.tasks.retention.enforce_data_retention",
+            "schedule": 2592000.0,  # Monthly (30 days)
+        },
+        "sync-watchlists": {
+            "task": "app.tasks.watchlist_sync.sync_all_watchlists",
+            "schedule": 21600.0,  # Every 6 hours
+        },
     },
 )
 
@@ -43,4 +55,7 @@ celery_app.conf.update(include=[
     "app.tasks.analysis",
     "app.tasks.training",
     "app.tasks.credit_scoring",
+    "app.tasks.polling",
+    "app.tasks.retention",
+    "app.tasks.watchlist_sync",
 ])
