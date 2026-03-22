@@ -10,7 +10,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from app.api import alerts, auth, cases, credit, transactions, webhook
+from app.api import alerts, auth, cases, credit, eligibility, transactions, webhook
 from app.core.config import settings
 
 logging.basicConfig(
@@ -65,6 +65,7 @@ app.include_router(transactions.router, prefix=settings.api_prefix)
 app.include_router(alerts.router, prefix=settings.api_prefix)
 app.include_router(cases.router, prefix=settings.api_prefix)
 app.include_router(credit.router, prefix=settings.api_prefix)
+app.include_router(eligibility.router, prefix=settings.api_prefix)
 
 
 @app.get("/health")

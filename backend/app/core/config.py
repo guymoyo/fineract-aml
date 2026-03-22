@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     sanctions_screening_enabled: bool = True
     sanctions_match_threshold: float = 0.85
 
+    # Webank eligibility
+    eml_api_key: str = "dev-eml-key"
+    eligibility_cache_ttl: int = 86400
+
     model_config = {"env_file": ".env", "env_prefix": "AML_"}
 
 
