@@ -55,11 +55,11 @@ class Settings(BaseSettings):
     credit_tier_d_min_score: float = 0.35
     # Below 0.35 = Tier E (Very Poor)
 
-    credit_tier_a_max_amount: float = 50_000.0  # XAF
-    credit_tier_b_max_amount: float = 20_000.0
-    credit_tier_c_max_amount: float = 10_000.0
-    credit_tier_d_max_amount: float = 1_000.0
-    credit_tier_e_max_amount: float = 0.0
+    credit_tier_a_max_amount: float = 2_000_000.0  # XAF
+    credit_tier_b_max_amount: float = 1_000_000.0
+    credit_tier_c_max_amount: float = 400_000.0
+    credit_tier_d_max_amount: float = 100_000.0
+    credit_tier_e_max_amount: float = 25_000.0
 
     # Credit scoring weights (must sum to 1.0)
     credit_weight_deposit_consistency: float = 0.20
@@ -75,11 +75,14 @@ class Settings(BaseSettings):
     credit_min_transactions: int = 5
 
     # Rule engine
-    max_transaction_amount: float = 10000.0
+    max_transaction_amount: float = 500_000.0
     rapid_transaction_window_minutes: int = 60
-    rapid_transaction_count: int = 10
-    structuring_threshold: float = 9500.0
+    rapid_transaction_count: int = 20
+    rapid_transaction_count_agent: int = 30
+    structuring_threshold: float = 490_000.0
     new_account_age_days: int = 30
+    agent_float_volume_minimum: float = 500_000.0
+    scatter_gather_min_senders: int = 15
 
     # CTR (Currency Transaction Report) — auto-file threshold
     ctr_threshold: float = 5_000_000.0  # XAF — CEMAC regulatory threshold
