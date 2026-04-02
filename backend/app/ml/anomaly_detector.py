@@ -31,8 +31,12 @@ class AnomalyDetector:
     def __init__(self):
         self.model: IsolationForest | None = None
         self.scaler: StandardScaler | None = None
+        # Percentile bounds computed during training for consistent inference normalization
+        self._score_p5: float | None = None
+        self._score_p95: float | None = None
         self._model_path = Path(settings.model_path) / "anomaly_detector.joblib"
         self._scaler_path = Path(settings.model_path) / "anomaly_scaler.joblib"
+        self._norm_path = Path(settings.model_path) / "anomaly_norm_params.joblib"
 
     def train(self, features: np.ndarray, contamination: float | None = None) -> dict:
         """Train the anomaly detector on historical transaction features.
@@ -60,10 +64,16 @@ class AnomalyDetector:
         self.model.fit(scaled_features)
 
         # Get training anomaly scores
-        scores = self.model.decision_function(scaled_features)
+        raw_scores = self.model.decision_function(scaled_features)
         predictions = self.model.predict(scaled_features)
         n_anomalies = int(np.sum(predictions == -1))
 
+        # Compute and store percentile bounds for consistent inference normalization
+        inverted = -raw_scores  # invert: higher = more anomalous
+        self._score_p5 = float(np.percentile(inverted, 5))
+        self._score_p95 = float(np.percentile(inverted, 95))
+
+        scores = raw_scores  # keep raw for metrics
         self._save()
 
         metrics = {
@@ -93,31 +103,46 @@ class AnomalyDetector:
         # decision_function returns negative for anomalies
         raw_score = self.model.decision_function(scaled)[0]
 
-        # Convert to 0-1 range where 1 = most anomalous
-        # Raw scores: negative = anomaly, positive = normal
-        # We invert and normalize using sigmoid-like transform
-        anomaly_score = 1.0 / (1.0 + np.exp(raw_score * 5))
+        # Normalize IF scores using percentile clipping for better dynamic range.
+        # IF decision_function: more negative = more anomalous; invert so higher = more anomalous.
+        inverted = -raw_score
 
-        return float(np.clip(anomaly_score, 0.0, 1.0))
+        p5 = self._score_p5
+        p95 = self._score_p95
+        if p5 is not None and p95 is not None and p95 > p5:
+            normalized = float(np.clip((inverted - p5) / (p95 - p5), 0.0, 1.0))
+        else:
+            # Fallback to sigmoid if percentile params are unavailable (old model)
+            normalized = float(1.0 / (1.0 + np.exp(raw_score * 5)))
+
+        return float(np.clip(normalized, 0.0, 1.0))
 
     def _save(self):
-        """Persist model and scaler to disk using atomic writes."""
+        """Persist model, scaler, and normalization params to disk using atomic writes."""
         model_dir = Path(settings.model_path)
         model_dir.mkdir(parents=True, exist_ok=True)
         # Atomic write: dump to temp file, then rename to avoid read corruption
         tmp_model = self._model_path.with_suffix(".joblib.tmp")
         tmp_scaler = self._scaler_path.with_suffix(".joblib.tmp")
+        tmp_norm = self._norm_path.with_suffix(".joblib.tmp")
         joblib.dump(self.model, tmp_model)
         joblib.dump(self.scaler, tmp_scaler)
+        joblib.dump({"p5": self._score_p5, "p95": self._score_p95}, tmp_norm)
         tmp_model.replace(self._model_path)
         tmp_scaler.replace(self._scaler_path)
+        tmp_norm.replace(self._norm_path)
         logger.info("Anomaly detector saved to %s", self._model_path)
 
     def _load(self):
-        """Load model and scaler from disk."""
+        """Load model, scaler, and normalization params from disk."""
         if self._model_path.exists() and self._scaler_path.exists():
             self.model = joblib.load(self._model_path)
             self.scaler = joblib.load(self._scaler_path)
+            # Load normalization params if available (may be missing for old models)
+            if self._norm_path.exists():
+                norm = joblib.load(self._norm_path)
+                self._score_p5 = norm.get("p5")
+                self._score_p95 = norm.get("p95")
             logger.info("Anomaly detector loaded from %s", self._model_path)
         else:
             logger.warning("No saved anomaly detector found at %s", self._model_path)

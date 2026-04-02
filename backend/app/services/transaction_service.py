@@ -91,7 +91,9 @@ class TransactionService:
         transaction.model_version = model_version
         transaction.score_explanation = score_explanation
 
-        if risk_score >= settings.risk_score_high:
+        if risk_score >= 0.9:
+            transaction.risk_level = RiskLevel.CRITICAL
+        elif risk_score >= settings.risk_score_high:
             transaction.risk_level = RiskLevel.HIGH
         elif risk_score >= settings.risk_score_medium:
             transaction.risk_level = RiskLevel.MEDIUM
