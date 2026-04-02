@@ -54,6 +54,8 @@ CREDIT_FEATURE_NAMES = [
     "incoming_transfer_ratio",       # incoming transfers / total deposits
     "unique_transfer_senders_30d",
     "outgoing_transfer_ratio",       # outgoing transfers / total withdrawals
+    # Score gaming detection
+    "round_trip_score",              # fraction of funds that came in and left to same counterparty within 48h
 ]
 
 
@@ -110,6 +112,13 @@ class CreditFeatureExtractor:
             amount = float(getattr(tx, "amount", 0))
             tx_date = getattr(tx, "transaction_date", now)
 
+            # Use transaction_type as primary direction discriminator
+            # Fall back to counterparty presence only when type is ambiguous
+            OUTGOING_TYPES = {"WITHDRAWAL", "TRANSFER_OUT", "TRANSFER", "LOAN_REPAYMENT", "PAYMENT"}
+            INCOMING_TYPES = {"DEPOSIT", "TRANSFER_IN", "CREDIT", "LOAN_DISBURSEMENT"}
+
+            tx_type_upper = tx_type_val.upper()
+
             if tx_type_val == "deposit":
                 deposits.append((amount, tx_date))
             elif tx_type_val == "withdrawal":
@@ -118,11 +127,17 @@ class CreditFeatureExtractor:
                 loan_disbursements.append((amount, tx_date))
             elif tx_type_val == "loan_repayment":
                 loan_repayments.append((amount, tx_date))
-            elif tx_type_val == "transfer":
-                # Determine direction: if counterparty_account_id exists, it's outgoing
-                # For incoming transfers, the customer's account receives the money
+            else:
+                # Transfers and other types: use type as primary direction discriminator
                 counterparty = getattr(tx, "counterparty_account_id", None)
-                if counterparty:
+                if tx_type_upper in OUTGOING_TYPES:
+                    is_outgoing = True
+                elif tx_type_upper in INCOMING_TYPES:
+                    is_outgoing = False
+                else:
+                    # Ambiguous type: fall back to counterparty presence
+                    is_outgoing = bool(counterparty)
+                if is_outgoing:
                     outgoing_transfers.append((amount, tx_date, counterparty))
                 else:
                     incoming_transfers.append((amount, tx_date, None))
@@ -177,10 +192,9 @@ class CreditFeatureExtractor:
 
         total_disbursed = sum(a for a, _ in loan_disbursements)
         total_repaid = sum(a for a, _ in loan_repayments)
-        if total_disbursed > 0:
-            repayment_rate = min(total_repaid / total_disbursed, 1.0)
-        else:
-            repayment_rate = 1.0  # no loans → perfect (neutral)
+        # Note: repayment_rate approximation — can't distinguish outstanding from defaulted
+        # without loan maturity dates. Cap at 1.0 and treat current ratio as lower bound.
+        repayment_rate = min(total_repaid / max(total_disbursed, 1.0), 1.0) if total_disbursed > 0 else 0.5  # 0.5 = unknown
         features.append(repayment_rate)
 
         # ── Risk history ──────────────────────────────────────
@@ -203,8 +217,10 @@ class CreditFeatureExtractor:
             cc = getattr(tx, "country_code", None)
             if cc:
                 countries.add(cc)
-        geo_stability = 1.0 - (len(countries) / max(len(transactions), 1))
-        geo_stability = max(0.0, geo_stability)
+        # Geo stability: penalize based on number of extra countries
+        # 1 country = 1.0 (perfect), 2 countries = 0.75, 3 = 0.5, 4+ = 0.25
+        unique_countries = len(countries)
+        geo_stability = max(0.0, 1.0 - (max(unique_countries - 1, 0) / 4.0))
         features.append(geo_stability)
 
         # ── Trends ────────────────────────────────────────────
@@ -244,6 +260,49 @@ class CreditFeatureExtractor:
         outgoing_amount = sum(a for a, _, _ in outgoing_transfers)
         outgoing_ratio = outgoing_amount / total_withdrawal_amount if total_withdrawal_amount > 0 else 0.0
         features.append(outgoing_ratio)
+
+        # ── Round-trip score (score gaming detection) ─────────────
+        # Ratio of funds that were deposited from a counterparty and then
+        # transferred back to the same counterparty within 48h.
+        # High ratio signals circular/wash transactions used to inflate balance.
+        round_trip_amount = 0.0
+        total_inflow = sum(a for a, _ in deposits) + sum(a for a, _, _ in incoming_transfers)
+
+        # Build a map of counterparty → deposit amounts and timestamps
+        cp_deposits: dict[str, list[tuple[float, datetime]]] = defaultdict(list)
+        for tx in transactions:
+            tx_type = getattr(tx, "transaction_type", None)
+            if tx_type is None:
+                continue
+            tv = tx_type.value if hasattr(tx_type, "value") else str(tx_type)
+            cp = getattr(tx, "counterparty_account_id", None)
+            tx_date = getattr(tx, "transaction_date", now)
+            amount = float(getattr(tx, "amount", 0))
+            if tv in ("deposit", "transfer") and cp:
+                cp_deposits[cp].append((amount, tx_date))
+
+        # For each outgoing transfer, check if money came from same counterparty within 48h
+        for tx in transactions:
+            tx_type = getattr(tx, "transaction_type", None)
+            if tx_type is None:
+                continue
+            tv = tx_type.value if hasattr(tx_type, "value") else str(tx_type)
+            if tv not in ("transfer", "withdrawal"):
+                continue
+            cp = getattr(tx, "counterparty_account_id", None)
+            if not cp or cp not in cp_deposits:
+                continue
+            tx_date = getattr(tx, "transaction_date", now)
+            out_amount = float(getattr(tx, "amount", 0))
+            cutoff_48h = tx_date - timedelta(hours=48)
+            incoming_from_cp = sum(
+                a for a, d in cp_deposits[cp] if cutoff_48h <= d <= tx_date
+            )
+            round_trip_amount += min(out_amount, incoming_from_cp)
+
+        round_trip_score = round_trip_amount / max(total_inflow, 1.0)
+        round_trip_score = min(1.0, round_trip_score)
+        features.append(round_trip_score)
 
         assert len(features) == len(CREDIT_FEATURE_NAMES), (
             f"Expected {len(CREDIT_FEATURE_NAMES)} features, got {len(features)}"

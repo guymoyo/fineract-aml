@@ -6,8 +6,8 @@ fuzzy name matching. Integrates with OFAC SDN, EU, UN sanctions lists.
 
 import json
 import logging
-from difflib import SequenceMatcher
 
+from rapidfuzz import fuzz
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,27 +21,40 @@ from app.models.sanctions import (
 logger = logging.getLogger(__name__)
 
 # Minimum similarity score to flag as a potential match
-MATCH_THRESHOLD = 0.85
-
-
-def _normalize_name(name: str) -> str:
-    """Normalize a name for comparison: lowercase, strip punctuation, collapse whitespace."""
-    import re
-
-    name = name.lower().strip()
-    name = re.sub(r"[^\w\s]", "", name)
-    name = re.sub(r"\s+", " ", name)
-    return name
+# With rapidfuzz multi-algorithm scoring, 0.82 balances precision vs recall
+# for transliteration tolerance while token_sort handles name-order reversal.
+MATCH_THRESHOLD = 0.82
 
 
 def _name_similarity(name1: str, name2: str) -> float:
-    """Compute similarity between two names using SequenceMatcher.
+    """Multi-algorithm name similarity for sanctions screening.
 
+    Handles reversed names, transliterations, and partial matches.
     Returns a score between 0.0 and 1.0.
     """
-    n1 = _normalize_name(name1)
-    n2 = _normalize_name(name2)
-    return SequenceMatcher(None, n1, n2).ratio()
+    if not name1 or not name2:
+        return 0.0
+
+    # Normalize: lowercase, strip diacritics via ASCII encoding
+    import unicodedata
+
+    def normalize(s: str) -> str:
+        return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").lower().strip()
+
+    n1 = normalize(name1)
+    n2 = normalize(name2)
+
+    # Token sort ratio handles reversed name order (best for sanctions)
+    token_sort = fuzz.token_sort_ratio(n1, n2) / 100.0
+
+    # WRatio handles transliterations and prefix variations
+    jaro = fuzz.WRatio(n1, n2) / 100.0
+
+    # Partial ratio handles names with extra titles/middle names
+    partial = fuzz.partial_ratio(n1, n2) / 100.0
+
+    # Take the maximum across algorithms
+    return max(token_sort, jaro, partial)
 
 
 class SanctionsScreeningService:
