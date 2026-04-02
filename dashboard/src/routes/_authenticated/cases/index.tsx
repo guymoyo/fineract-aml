@@ -182,12 +182,18 @@ function CasesPage() {
             </thead>
             <tbody className="divide-y divide-gray-200">
               {data.items.map((c) => (
-                <tr key={c.id} className="hover:bg-gray-50">
+                <tr key={c.id} className="cursor-pointer hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <p className="text-sm font-medium text-gray-900">
-                      {c.case_number}
-                    </p>
-                    <p className="text-xs text-gray-500">{c.title}</p>
+                    <Link
+                      to="/cases/$caseId"
+                      params={{ caseId: c.id }}
+                      className="block"
+                    >
+                      <p className="text-sm font-medium text-gray-900">
+                        {c.case_number}
+                      </p>
+                      <p className="text-xs text-gray-500">{c.title}</p>
+                    </Link>
                   </td>
                   <td className="px-4 py-3 text-sm font-mono text-gray-600">
                     {c.fineract_client_id || "—"}

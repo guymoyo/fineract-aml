@@ -107,14 +107,20 @@ function TransactionsPage() {
             </thead>
             <tbody className="divide-y divide-gray-200">
               {data.items.map((tx) => (
-                <tr key={tx.id} className="hover:bg-gray-50">
+                <tr key={tx.id} className="cursor-pointer hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <p className="text-sm font-medium text-gray-900">
-                      {tx.fineract_transaction_id}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {tx.fineract_account_id}
-                    </p>
+                    <Link
+                      to="/transactions/$txId"
+                      params={{ txId: tx.id }}
+                      className="block"
+                    >
+                      <p className="text-sm font-medium text-gray-900">
+                        {tx.fineract_transaction_id}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {tx.fineract_account_id}
+                      </p>
+                    </Link>
                   </td>
                   <td className="px-4 py-3 text-sm capitalize text-gray-600">
                     {tx.transaction_type}

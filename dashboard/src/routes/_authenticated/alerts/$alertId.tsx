@@ -1,6 +1,6 @@
 import { alertDetailOptions } from "@/api/queries";
 import { useSubmitReview } from "@/api/mutations";
-import type { ReviewDecision } from "@/api/types";
+import type { LLMReport, ReviewDecision, ScreeningResult } from "@/api/types";
 import { RiskScoreBar } from "@/components/risk-score-bar";
 import { StatusBadge } from "@/components/status-badge";
 import {
@@ -17,9 +17,23 @@ import {
   CheckCircle,
   FileWarning,
   Shield,
+  ShieldAlert,
   XCircle,
 } from "lucide-react";
 import { useState } from "react";
+
+function screeningStatusColor(status: ScreeningResult["status"]): string {
+  switch (status) {
+    case "clear":
+      return "text-green-700 bg-green-50 border-green-200";
+    case "potential_match":
+      return "text-amber-700 bg-amber-50 border-amber-200";
+    case "confirmed_match":
+      return "text-red-700 bg-red-50 border-red-200";
+    case "false_positive":
+      return "text-gray-500 bg-gray-50 border-gray-200";
+  }
+}
 
 export const Route = createFileRoute("/_authenticated/alerts/$alertId")({
   loader: ({ context, params }) =>
@@ -40,6 +54,17 @@ function AlertDetailPage() {
   const triggeredRules: string[] = alert.triggered_rules
     ? JSON.parse(alert.triggered_rules)
     : [];
+
+  let llmReport: LLMReport | null = null;
+  try {
+    if (alert.investigation_report) {
+      llmReport = JSON.parse(alert.investigation_report) as LLMReport;
+    }
+  } catch {
+    // malformed JSON — skip
+  }
+
+  const screening = alert.screening_result ?? null;
 
   const canReview =
     alert.status === "pending" || alert.status === "under_review";
@@ -167,6 +192,118 @@ function AlertDetailPage() {
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {/* LLM Investigation Report */}
+          {llmReport ? (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6 shadow-sm">
+              <h2 className="flex items-center gap-2 text-lg font-semibold text-indigo-900">
+                <ShieldAlert className="h-5 w-5" />
+                AI Investigation Report
+              </h2>
+              <p className="mt-3 text-sm text-indigo-800">{llmReport.summary}</p>
+
+              {llmReport.typology_match && (
+                <div className="mt-3">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-indigo-300 bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-800">
+                    Typology: {llmReport.typology_match}
+                  </span>
+                </div>
+              )}
+
+              {llmReport.risk_factors.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600">
+                    Risk Factors
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {llmReport.risk_factors.map((factor, i) => (
+                      <li
+                        // biome-ignore lint/suspicious/noArrayIndexKey: static list
+                        key={i}
+                        className="flex items-start gap-2 text-sm text-indigo-800"
+                      >
+                        <span className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-indigo-400" />
+                        {factor}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {llmReport.sar_recommendation && (
+                <div className="mt-4 rounded-lg border border-indigo-200 bg-white px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600">
+                    SAR Recommendation
+                  </p>
+                  <p className="mt-1 text-sm text-gray-800">
+                    {llmReport.sar_recommendation}
+                  </p>
+                </div>
+              )}
+
+              {llmReport.confidence && (
+                <p className="mt-3 text-xs text-indigo-500">
+                  Confidence: {llmReport.confidence}
+                </p>
+              )}
+            </div>
+          ) : (
+            (alert.status === "pending" || alert.status === "under_review") && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center shadow-sm">
+                <p className="text-sm text-gray-400 italic">
+                  Awaiting AI investigation report…
+                </p>
+              </div>
+            )
+          )}
+
+          {/* Sanctions Screening */}
+          {screening && (
+            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Sanctions Screening
+              </h2>
+              <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <dt className="text-gray-500">Screened Name</dt>
+                  <dd className="font-medium text-gray-900">
+                    {screening.screened_name}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Status</dt>
+                  <dd>
+                    <StatusBadge
+                      status={formatStatusLabel(screening.status)}
+                      colorClass={screeningStatusColor(screening.status)}
+                    />
+                  </dd>
+                </div>
+                {screening.matched_name && (
+                  <div>
+                    <dt className="text-gray-500">Matched Name</dt>
+                    <dd className="font-medium text-red-700">
+                      {screening.matched_name}
+                    </dd>
+                  </div>
+                )}
+                {screening.match_score != null && (
+                  <div>
+                    <dt className="text-gray-500">Match Score</dt>
+                    <dd className="font-medium text-gray-900">
+                      {Math.round(screening.match_score * 100)}%
+                    </dd>
+                  </div>
+                )}
+                {screening.source && (
+                  <div>
+                    <dt className="text-gray-500">Source List</dt>
+                    <dd className="text-gray-900">{screening.source}</dd>
+                  </div>
+                )}
+              </dl>
             </div>
           )}
 

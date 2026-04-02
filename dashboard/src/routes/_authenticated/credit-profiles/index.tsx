@@ -114,11 +114,15 @@ function CreditProfilesPage() {
             </thead>
             <tbody className="divide-y divide-gray-200">
               {data.items.map((profile) => (
-                <tr key={profile.id} className="hover:bg-gray-50">
+                <tr key={profile.id} className="cursor-pointer hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <span className="font-medium text-gray-900">
+                    <Link
+                      to="/credit-profiles/$clientId"
+                      params={{ clientId: profile.fineract_client_id }}
+                      className="font-medium text-gray-900 hover:text-primary-600"
+                    >
                       {profile.fineract_client_id}
-                    </span>
+                    </Link>
                   </td>
                   <td className="px-4 py-3">
                     <RiskScoreBar score={profile.credit_score} />

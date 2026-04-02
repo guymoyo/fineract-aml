@@ -61,10 +61,12 @@ export interface Alert {
   title: string;
   description: string | null;
   triggered_rules: string | null;
+  investigation_report: string | null;
   assigned_to: string | null;
   created_at: string;
   updated_at: string;
   transaction?: Transaction;
+  screening_result?: ScreeningResult | null;
 }
 
 export interface Review {
@@ -200,6 +202,57 @@ export interface CreditAnalytics {
   total_pending_requests: number;
   total_approved: number;
   total_rejected: number;
+}
+
+// ── Sanctions / Screening ────────────────────────────────
+
+export type ScreeningStatus =
+  | "clear"
+  | "potential_match"
+  | "confirmed_match"
+  | "false_positive";
+
+export interface ScreeningResult {
+  id: string;
+  transaction_id: string;
+  screened_name: string;
+  matched_entry_id: string | null;
+  matched_name: string | null;
+  match_score: number | null;
+  source: string | null;
+  status: ScreeningStatus;
+}
+
+// ── Model Health ─────────────────────────────────────────
+
+export interface ModelHealth {
+  model_name: string;
+  model_version: string | null;
+  trained_at: string | null;
+  training_sample_count: number | null;
+  auc_score: number | null;
+  precision_score: number | null;
+  recall_score: number | null;
+  psi_score: number | null;
+  drift_status: string | null;
+  snapshot_at: string;
+}
+
+export interface DriftSummary {
+  model_name: string;
+  psi_score: number | null;
+  drift_status: string;
+  recommendation: string;
+}
+
+// ── LLM Investigation Report (parsed from JSON string) ───
+
+export interface LLMReport {
+  summary: string;
+  typology_match: string | null;
+  risk_factors: string[];
+  sar_recommendation: string | null;
+  confidence: string | null;
 }
 
 export interface CreditRequestCreateBody {

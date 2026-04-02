@@ -12,6 +12,8 @@ import type {
   CreditRequest,
   CreditRequestStatus,
   CreditSegment,
+  DriftSummary,
+  ModelHealth,
   PaginatedResponse,
   RiskLevel,
   Transaction,
@@ -50,6 +52,11 @@ export const queryKeys = {
       ["credit", "requests", page, status] as const,
     request: (id: string) => ["credit", "requests", id] as const,
     analytics: ["credit", "analytics"] as const,
+  },
+  modelHealth: {
+    all: ["model-health"] as const,
+    history: (name: string) => ["model-health", "history", name] as const,
+    drift: ["model-health", "drift"] as const,
   },
   auth: {
     me: ["auth", "me"] as const,
@@ -170,5 +177,31 @@ export function currentUserOptions() {
     queryKey: queryKeys.auth.me,
     queryFn: () => api.get<User>("/auth/me"),
     retry: false,
+  });
+}
+
+// ── Model Health Query Options ────────────────────────────
+
+export function modelHealthOptions() {
+  return queryOptions({
+    queryKey: queryKeys.modelHealth.all,
+    queryFn: () => api.get<ModelHealth[]>("/model-health"),
+    refetchInterval: 60_000,
+  });
+}
+
+export function modelHistoryOptions(name: string) {
+  return queryOptions({
+    queryKey: queryKeys.modelHealth.history(name),
+    queryFn: () =>
+      api.get<ModelHealth[]>(`/model-health/history/${encodeURIComponent(name)}?limit=30`),
+  });
+}
+
+export function modelDriftOptions() {
+  return queryOptions({
+    queryKey: queryKeys.modelHealth.drift,
+    queryFn: () => api.get<DriftSummary[]>("/model-health/drift"),
+    refetchInterval: 60_000,
   });
 }
