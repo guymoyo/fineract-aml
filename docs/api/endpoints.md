@@ -44,9 +44,17 @@ Receives transaction events from Fineract. No authentication required (uses HMAC
   "transaction_date": "2025-06-15T14:30:00Z",
   "counterparty_account_id": "ACC-002",
   "counterparty_name": "John Doe",
-  "description": "Wire transfer"
+  "description": "Wire transfer",
+  "actor_type": "agent",
+  "agent_id": "AGT-001",
+  "branch_id": "BRN-001",
+  "merchant_id": null,
+  "device_id": "d3f4...",
+  "kyc_level": 2
 }
 ```
+
+Actor context fields are populated by the BFF from Keycloak token claims before forwarding. See the [Updated Webhook Payload Schema](#updated-webhook-payload-schema) section for field details.
 
 **Response (202 Accepted):**
 ```json
@@ -208,3 +216,121 @@ Health check endpoint (no auth required).
 ```json
 {"status": "healthy", "service": "Fineract AML Service", "version": "0.1.0"}
 ```
+
+---
+
+## Scoring
+
+### POST `/api/v1/score`
+
+Synchronous risk scoring without a database write. Designed for BFF pre-screening or real-time decisioning where sub-400ms latency is required.
+
+**Request body**: Same JSON schema as `POST /webhook/fineract` (including all actor context fields).
+
+**Response:**
+```json
+{
+  "risk_score": 0.74,
+  "risk_level": "HIGH",
+  "rule_score": 0.65,
+  "anomaly_score": 0.71,
+  "ml_score": 0.82,
+  "triggered_rules": ["structuring", "rapid_transactions"],
+  "recommendation": "ESCALATE",
+  "latency_ms": 187,
+  "degraded_mode": false
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `risk_score` | Final combined risk score (0.0–1.0) |
+| `risk_level` | `LOW` / `MEDIUM` / `HIGH` / `CRITICAL` |
+| `rule_score` | Score contribution from the deterministic rule engine |
+| `anomaly_score` | Score from the unsupervised anomaly detector |
+| `ml_score` | Score from the supervised fraud classifier (null if model not ready) |
+| `triggered_rules` | List of rule names that fired |
+| `recommendation` | `ALLOW` / `MONITOR` / `ESCALATE` / `BLOCK` |
+| `latency_ms` | End-to-end scoring latency in milliseconds |
+| `degraded_mode` | `true` when DB history fetch timed out; rules-only fallback was used |
+
+- `degraded_mode: true` indicates the 7d/24h account history fetch timed out. Scoring fell back to rules-only mode (no ML, no velocity features). The response is still valid but less precise.
+- Target latency: **< 400 ms** (p99).
+
+---
+
+## Graph Visualization
+
+### GET `/graph/account/{account_id}?days=30&depth=2`
+
+Returns a 2-hop transaction network graph suitable for D3 or Cytoscape rendering.
+
+**Query Parameters:**
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `days` | int | 30 | Lookback window in days |
+| `depth` | int | 2 | Hop depth from the root account |
+
+**Response:** `{nodes: [...], edges: [...]}` — cached for 15 minutes.
+
+### GET `/graph/case/{case_id}`
+
+Returns the transaction network subgraph for all accounts and transactions linked to a given case.
+
+---
+
+## Model Health
+
+### GET `/model-health`
+
+Returns the latest health snapshot for each active ML model, including AUC and PSI drift score.
+
+### GET `/model-health/drift`
+
+Returns PSI-based drift summaries per feature, with per-model status (`stable` | `warning` | `drift`) and recommended actions.
+
+### GET `/model-health/history/{model_name}?limit=20`
+
+Returns historical training snapshots for the named model (e.g., `fraud_classifier`, `anomaly_detector`).
+
+**Query Parameters:**
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `limit` | int | 20 | Maximum number of historical snapshots to return |
+
+---
+
+## SAR Export
+
+### GET `/cases/{id}/sar/xml`
+
+Exports the SAR (Suspicious Activity Report) for a case as COBAC-compliant XML, ready for electronic filing with the regulator.
+
+### GET `/cases/{id}/sar/pdf`
+
+Exports the SAR as a PDF document in French, formatted for COBAC submission. The narrative is generated or reviewed by the LLM Investigation Agent.
+
+---
+
+## Observability
+
+### GET `/metrics`
+
+Prometheus metrics endpoint. Exposes request counts, latency histograms, alert volumes, model inference latencies, and Celery queue depths.
+
+---
+
+## Updated Webhook Payload Schema
+
+The following fields have been added to the existing `/webhook/fineract` payload in Phase 1 to support the WeBank actor model:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `actor_type` | `string\|null` | Actor category: `"customer"`, `"agent"`, or `"merchant"` |
+| `agent_id` | `string\|null` | Fineract office/staff ID for the transacting agent |
+| `branch_id` | `string\|null` | Branch or office ID |
+| `merchant_id` | `string\|null` | Merchant account ID (QR payment merchants) |
+| `device_id` | `string\|null` | SHA-256 device fingerprint hash |
+| `kyc_level` | `int\|null` | Customer KYC level 1–4 |
+
+The BFF is responsible for populating `actor_type` from Keycloak token claims before forwarding the webhook.

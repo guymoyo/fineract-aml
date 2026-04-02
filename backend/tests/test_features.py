@@ -79,3 +79,83 @@ class TestFeatureExtractor:
         features = FeatureExtractor.extract(tx, [], history)
         ip_new_idx = FEATURE_NAMES.index("is_new_ip_for_account")
         assert features[ip_new_idx] == 0.0  # known IP
+
+    def test_feature_count_is_36(self):
+        assert len(FEATURE_NAMES) == 36
+
+    def test_7d_features_populated(self):
+        tx = FakeTransaction(amount=500.0)
+        history_7d = [FakeTransaction(amount=200.0) for _ in range(14)]
+        features = FeatureExtractor.extract(tx, [], [], account_history_7d=history_7d)
+        idx = FEATURE_NAMES.index("tx_count_7d")
+        assert features[idx] == 14.0
+        idx_total = FEATURE_NAMES.index("total_amount_7d")
+        assert features[idx_total] == 14 * 200.0
+
+    def test_7d_features_fallback_to_24h(self):
+        """When account_history_7d is None, extractor uses 24h history as fallback."""
+        tx = FakeTransaction(amount=100.0)
+        history_24h = [FakeTransaction(amount=50.0) for _ in range(3)]
+        features = FeatureExtractor.extract(tx, [], history_24h, account_history_7d=None)
+        idx = FEATURE_NAMES.index("tx_count_7d")
+        # Fallback: 7d features use 24h history
+        assert features[idx] == 3.0
+
+    def test_actor_context_agent(self):
+        tx = FakeTransaction(actor_type="agent", kyc_level=2)
+        features = FeatureExtractor.extract(tx, [], [])
+        assert features[FEATURE_NAMES.index("is_agent")] == 1.0
+        assert features[FEATURE_NAMES.index("is_merchant")] == 0.0
+        assert features[FEATURE_NAMES.index("kyc_level_norm")] == pytest.approx(0.5)
+        assert features[FEATURE_NAMES.index("is_new_kyc")] == 0.0
+
+    def test_actor_context_merchant(self):
+        tx = FakeTransaction(actor_type="merchant")
+        features = FeatureExtractor.extract(tx, [], [])
+        assert features[FEATURE_NAMES.index("is_agent")] == 0.0
+        assert features[FEATURE_NAMES.index("is_merchant")] == 1.0
+
+    def test_actor_context_new_kyc(self):
+        tx = FakeTransaction(actor_type="customer", kyc_level=1)
+        features = FeatureExtractor.extract(tx, [], [])
+        assert features[FEATURE_NAMES.index("is_new_kyc")] == 1.0
+        assert features[FEATURE_NAMES.index("kyc_level_norm")] == pytest.approx(0.25)
+
+    def test_actor_context_unknown_kyc_defaults_to_half(self):
+        tx = FakeTransaction(actor_type="customer", kyc_level=None)
+        features = FeatureExtractor.extract(tx, [], [])
+        assert features[FEATURE_NAMES.index("kyc_level_norm")] == pytest.approx(0.5)
+
+    def test_receiver_diversity_7d(self):
+        tx = FakeTransaction()
+        history_7d = [
+            FakeTransaction(counterparty_account_id=f"ACC-{i}") for i in range(4)
+        ]
+        features = FeatureExtractor.extract(tx, [], [], account_history_7d=history_7d)
+        idx = FEATURE_NAMES.index("receiver_diversity_7d")
+        # 4 unique recipients / 4 txns = 1.0
+        assert features[idx] == pytest.approx(1.0)
+
+    def test_geo_distance_different_country(self):
+        tx = FakeTransaction(country_code="NG")  # Nigeria — different from history
+        history_7d = [FakeTransaction(country_code="CM") for _ in range(5)]  # Cameroon
+        features = FeatureExtractor.extract(tx, [], [], account_history_7d=history_7d)
+        idx = FEATURE_NAMES.index("geo_distance_from_usual")
+        assert features[idx] == 1.0
+
+    def test_geo_distance_same_country(self):
+        tx = FakeTransaction(country_code="CM")
+        history_7d = [FakeTransaction(country_code="CM") for _ in range(5)]
+        features = FeatureExtractor.extract(tx, [], [], account_history_7d=history_7d)
+        idx = FEATURE_NAMES.index("geo_distance_from_usual")
+        assert features[idx] == 0.0
+
+    def test_velocity_trend_normal(self):
+        """Equal 24h and 7d rate should give trend ≈ 1.0."""
+        tx = FakeTransaction()
+        # 1 txn/day over 7d = 7 txns; 1 txn in 24h → trend ≈ 1.0
+        history_24h = [FakeTransaction() for _ in range(1)]
+        history_7d = [FakeTransaction() for _ in range(7)]
+        features = FeatureExtractor.extract(tx, [], history_24h, account_history_7d=history_7d)
+        idx = FEATURE_NAMES.index("tx_velocity_trend")
+        assert features[idx] == pytest.approx(1.0)

@@ -26,6 +26,14 @@ class WebhookPayload(BaseModel):
     country_code: str | None = Field(default=None, max_length=2, description="ISO 3166-1 alpha-2 country code")
     geo_location: str | None = Field(default=None, description="Latitude,longitude or city name")
 
+    # WeBank actor context — populated by the BFF from Keycloak token claims
+    actor_type: str | None = Field(default=None, description="Actor role: 'customer' | 'agent' | 'merchant'")
+    agent_id: str | None = Field(default=None, description="Fineract office/staff ID of the serving agent")
+    branch_id: str | None = Field(default=None, description="Fineract branch/office ID")
+    merchant_id: str | None = Field(default=None, description="Merchant account ID for QR payments")
+    device_id: str | None = Field(default=None, description="SHA-256 device fingerprint hash")
+    kyc_level: int | None = Field(default=None, ge=1, le=4, description="KYC level 1–4 from KYC manager")
+
 
 class TransactionResponse(BaseModel):
     """Transaction data returned to the client."""

@@ -91,6 +91,61 @@ class Settings(BaseSettings):
     sanctions_screening_enabled: bool = True
     sanctions_match_threshold: float = 0.85
 
+    # Agent network fraud rules
+    agent_structuring_min_count: int = 5
+    agent_collusion_window_minutes: int = 60
+    agent_float_imbalance_threshold: float = 0.95
+    agent_float_volume_minimum: float = 50_000.0
+    agent_new_account_threshold: int = 8
+
+    # Network typology rules (from IBM AMLSim)
+    scatter_gather_min_senders: int = 8
+    bipartite_fan_threshold: int = 5
+    stacking_window_minutes: int = 30
+    stacking_amount_ratio_min: float = 0.8
+    stacking_amount_ratio_max: float = 1.2
+
+    # Merchant fraud rules
+    anonymous_payment_alert_threshold: float = 100_000.0
+
+    # Post-disbursement loan monitoring
+    loan_run_threshold: float = 0.8          # fraction of loan transferred = flag
+    loan_immediate_cashout_minutes: int = 30  # cash-out within this window = critical
+    loan_dispersal_counterparty_min: int = 5  # sent to this many parties = flag
+
+    # Credit score gaming
+    credit_gaming_inflow_multiplier: float = 3.0
+    credit_gaming_score_penalty: float = 0.15
+
+    # Adverse media screening
+    adverse_media_enabled: bool = False
+    adverse_media_api_key: str = ""
+    adverse_media_api_url: str = "https://newsapi.org/v2/everything"
+    adverse_media_min_risk_score: float = 0.6  # Only screen if risk score >= this
+
+    # LLM / AI agent
+    anthropic_api_key: str = ""
+    llm_investigation_enabled: bool = False
+    llm_model: str = "claude-opus-4-6"
+    llm_investigation_min_risk_level: str = "high"  # "medium" | "high" | "critical"
+
+    # Synchronous scoring endpoint
+    sync_scoring_timeout_ms: int = 400
+    sync_scoring_enabled: bool = True
+
+    # Graph cache (Redis-backed)
+    graph_cache_ttl_seconds: int = 1800
+    graph_refresh_interval_minutes: int = 15
+    graph_lookback_hours: int = 48
+
+    # Shadow/canary ML deployment
+    shadow_model_enabled: bool = False
+    shadow_model_promotion_auc_delta: float = 0.02
+    shadow_model_promotion_days: int = 7
+
+    # Anomaly detector ensemble
+    anomaly_ensemble_enabled: bool = False
+
     model_config = {"env_file": ".env", "env_prefix": "AML_"}
 
 

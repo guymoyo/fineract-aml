@@ -274,6 +274,140 @@ The retention task runs monthly via Celery Beat. All purge actions are audit-log
 
 All settings are configurable via environment variables with the `AML_` prefix:
 
+---
+
+## 9. COBAC SAR Filing Workflow
+
+The system automates SAR preparation end-to-end, from detection through narrative drafting and export.
+
+```
+Alert flagged HIGH or CRITICAL
+    → Case created (or analyst groups alerts into a case)
+    → EscalationService monitors open cases hourly
+        → Auto-escalates to ESCALATED status after 30 days if not resolved
+        → Notifies compliance officers of approaching deadlines
+    → LLM agent generates French SAR narrative (Claude API)
+        [gated by AML_LLM_INVESTIGATION_ENABLED=true]
+    → Compliance officer reviews at GET /api/v1/cases/{id}/sar/pdf
+    → Exports to XML for electronic filing: GET /api/v1/cases/{id}/sar/xml
+```
+
+**SLA**: 30 days from escalation. `EscalationService` (run by the hourly Celery task) enforces this SLA automatically and notifies compliance officers of approaching deadlines.
+
+### SAR Document Formats
+
+| Endpoint | Format | Purpose |
+|----------|--------|---------|
+| `GET /api/v1/cases/{id}/sar/xml` | COBAC-compliant XML | Electronic filing with the regulator |
+| `GET /api/v1/cases/{id}/sar/pdf` | French PDF | Compliance officer review and physical submission |
+
+The SAR narrative is drafted in French by the LLM investigation agent and embedded in both export formats. If the alert already has a `narrative_fr` in its `investigation_report`, it is used directly; otherwise Claude is called on demand with the full case context.
+
+---
+
+## 10. Tiered Country Risk (FATF-Based)
+
+Country risk is now tiered across three levels, replacing the previous binary FATF high-risk list.
+
+### Critical — FATF Black List
+
+Countries subject to a Call for Action (highest risk). Mandatory Enhanced Due Diligence (EDD) and automatic HIGH risk assignment.
+
+| Code | Country |
+|------|---------|
+| KP | North Korea |
+| IR | Iran |
+| MM | Myanmar |
+
+### High — FATF Grey List
+
+Countries under Increased Monitoring. EDD required; assigned MEDIUM risk.
+
+| Code | Country |
+|------|---------|
+| AF | Afghanistan |
+| YE | Yemen |
+| SY | Syria |
+| SS | South Sudan |
+| LY | Libya |
+| SO | Somalia |
+| HT | Haiti |
+| PA | Panama |
+| PH | Philippines |
+| VN | Vietnam |
+| ML | Mali |
+| SN | Senegal |
+| CF | Central African Republic |
+| CD | Democratic Republic of Congo |
+| MZ | Mozambique |
+| TZ | Tanzania |
+| NG | Nigeria |
+| SD | Sudan |
+
+### Elevated — EU Non-Cooperative Jurisdictions
+
+Additional score penalty applied. If the current risk level is LOW it is automatically raised to MEDIUM.
+
+| Code | Country |
+|------|---------|
+| RU | Russia |
+| BY | Belarus |
+| CU | Cuba |
+| VE | Venezuela |
+| ZW | Zimbabwe |
+
+---
+
+## 11. Adverse Media Screening
+
+Counterparty names are screened against recent news articles for negative associations.
+
+**Configuration:**
+```env
+ADVERSE_MEDIA_ENABLED=true
+ADVERSE_MEDIA_API_KEY=<NewsAPI key>
+ADVERSE_MEDIA_MIN_RISK_SCORE=0.6   # Only screen when final_score >= this value
+```
+
+- Screens against NewsAPI using 16 negative keywords (fraud, money laundering, corruption, sanctions, etc.)
+- Only triggered when `final_score >= ADVERSE_MEDIA_MIN_RISK_SCORE` (default 0.6) to limit unnecessary API calls
+- Results are logged to the screening results table
+- Future: alerts will be raised when a match is found with sufficient confidence
+
+---
+
+## 12. AML Typologies Covered
+
+The system detects the following typologies through dedicated deterministic rules. All 9 new rules are in addition to the original 10 standard rules.
+
+### IBM AMLSim Network Typologies (3 rules)
+
+| Rule Name | Trigger | Severity |
+|-----------|---------|----------|
+| `scatter_gather` | ≥8 unique senders to a single account + a single large outbound transfer within 7 days | 0.85 |
+| `bipartite_layering` | ≥5 unique senders AND ≥5 unique recipients through a single intermediary within 7 days | 0.90 |
+| `stacking` | ≥3 sequential transfers within 30 minutes where each amount is 80–120% of the prior transfer | 0.80 |
+
+### Agent-Specific Typologies (4 rules)
+
+All agent rules require `actor_type == "agent"` in the webhook payload.
+
+| Rule Name | Trigger | Severity |
+|-----------|---------|----------|
+| `agent_structuring` | ≥5 deposits just below the 5M XAF CTR threshold from same agent within 1 hour | 0.85 |
+| `agent_float_anomaly` | Float ratio >0.95 or <0.05 over 24 hours vs. agent's own `typical_float_ratio` baseline | 0.60 |
+| `agent_account_farming` | >8 deposits into brand-new KYC-level-1 accounts (age <7 days) within 24 hours | 0.75 |
+| `agent_customer_collusion` | Deposit via agent A for customer X + withdrawal via different agent within 60 minutes | 0.80 |
+
+### Merchant-Specific Typologies (2 rules)
+
+All merchant rules require `actor_type == "merchant"` in the webhook payload.
+
+| Rule Name | Trigger | Severity |
+|-----------|---------|----------|
+| `merchant_collection_account` | Merchant account receiving from an unusually diverse set of payers (structuring via merchant QR) | 0.75 |
+| `high_value_anonymous_payment` | High-value transaction with no KYC data on the payer side | 0.70 |
+
 ```env
 # Sanctions
 AML_SANCTIONS_SCREENING_ENABLED=true

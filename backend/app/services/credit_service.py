@@ -267,6 +267,41 @@ class CreditService:
 
         return profiles, total
 
+    # ── Credit Score Gaming Detection ────────────────────────────
+
+    async def _detect_score_inflation(self, client_id: str) -> bool:
+        """Detect whether recent deposits are abnormally high vs. the 30-day average.
+
+        Pattern: a user makes many deposits in the 7-14 days before applying for credit
+        to inflate deposit_consistency and net_monthly_flow components, then plans to
+        withdraw immediately after the loan is approved.
+
+        Returns True if score inflation is suspected.
+        """
+        transactions = await self.get_client_transactions(client_id, days=30)
+        if len(transactions) < settings.credit_min_transactions:
+            return False
+
+        # Sum deposits in last 7 days vs average weekly deposit over 30 days
+        cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+        recent_inflow = sum(
+            t.amount for t in transactions
+            if t.transaction_date >= cutoff_7d
+            and t.transaction_type.value == "deposit"
+        )
+        total_inflow_30d = sum(
+            t.amount for t in transactions
+            if t.transaction_type.value == "deposit"
+        )
+        # Average weekly inflow over 30 days (30/7 ≈ 4.3 weeks)
+        avg_weekly_inflow = total_inflow_30d / 4.3 if total_inflow_30d > 0 else 0
+
+        if avg_weekly_inflow == 0:
+            return False
+
+        multiplier = settings.credit_gaming_inflow_multiplier
+        return recent_inflow > avg_weekly_inflow * multiplier
+
     # ── Credit Request Workflow ────────────────────────────────
 
     async def create_credit_request(
@@ -286,26 +321,67 @@ class CreditService:
         # Compute/refresh the credit profile first
         profile = await self.compute_credit_profile(client_id)
 
-        # Generate recommendation
+        # Detect credit score gaming before generating recommendation
+        score_inflation_flag = await self._detect_score_inflation(client_id)
+
+        # Apply inflation penalty and force REVIEW_CAREFULLY if gaming detected
+        effective_score = profile.credit_score
+        if score_inflation_flag:
+            effective_score = max(0.0, profile.credit_score - settings.credit_gaming_score_penalty)
+            logger.warning(
+                "Score inflation detected for client %s: raw=%.2f, adjusted=%.2f",
+                client_id, profile.credit_score, effective_score,
+            )
+
+        # Generate recommendation based on effective (potentially penalized) score
         scorer = CreditScorer()
-        recommendation = scorer.recommend(
-            score=profile.credit_score,
-            segment=profile.segment,
-            requested_amount=requested_amount,
-            max_amount=profile.max_credit_amount,
+        if score_inflation_flag:
+            recommendation = CreditRecommendation.REVIEW_CAREFULLY
+        else:
+            recommendation = scorer.recommend(
+                score=effective_score,
+                segment=profile.segment,
+                requested_amount=requested_amount,
+                max_amount=profile.max_credit_amount,
+            )
+
+        inflation_note = (
+            "POSSIBLE SCORE INFLATION DETECTED: Recent inflow significantly exceeds "
+            "30-day average. Manual verification of deposit source required. "
+            f"Raw score: {profile.credit_score:.2f}, Adjusted: {effective_score:.2f}. "
+            if score_inflation_flag else ""
         )
 
         request = CreditRequest(
             fineract_client_id=client_id,
             requested_amount=requested_amount,
-            credit_score_at_request=profile.credit_score,
+            credit_score_at_request=effective_score,
             segment_at_request=profile.segment,
             max_credit_at_request=profile.max_credit_amount,
             recommendation=recommendation,
             status=CreditRequestStatus.PENDING_REVIEW,
+            score_inflation_flag=score_inflation_flag,
+            reviewer_notes=inflation_note if score_inflation_flag else None,
         )
         self.db.add(request)
         await self.db.flush()
+
+        # Generate LLM explanation (customer + compliance versions)
+        if settings.llm_investigation_enabled and settings.anthropic_api_key:
+            try:
+                explanation = await self._generate_credit_explanation(
+                    client_id=client_id,
+                    score=effective_score,
+                    segment=profile.segment,
+                    recommendation=recommendation,
+                    requested_amount=requested_amount,
+                    max_amount=profile.max_credit_amount,
+                    score_inflation_flag=score_inflation_flag,
+                    score_components=profile.score_components,
+                )
+                request.explanation_text = explanation
+            except Exception as exc:
+                logger.warning("LLM credit explanation failed for %s: %s", client_id, exc)
 
         logger.info(
             "Credit request created for client %s: amount=%.0f, score=%.2f, "
@@ -314,6 +390,65 @@ class CreditService:
             recommendation.value,
         )
         return request
+
+    async def _generate_credit_explanation(
+        self,
+        client_id: str,
+        score: float,
+        segment,
+        recommendation,
+        requested_amount: float,
+        max_amount: float,
+        score_inflation_flag: bool,
+        score_components: str,
+    ) -> str:
+        """Call Claude to generate dual-audience credit decision explanations."""
+        import anthropic
+
+        components = {}
+        try:
+            components = json.loads(score_components) if score_components else {}
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        components_text = "\n".join(
+            f"- {k}: {v:.2f}" for k, v in components.items() if isinstance(v, (int, float))
+        ) or "Non disponible"
+
+        prompt = f"""Tu es un assistant conformité pour WeBank Cameroun.
+
+Génère une explication de décision de crédit en deux parties:
+
+**DONNÉES:**
+- Client ID: {client_id}
+- Score de crédit: {score:.2f}/1.0
+- Segment: {segment.value}
+- Montant demandé: {requested_amount:,.0f} XAF
+- Montant maximum autorisé: {max_amount:,.0f} XAF
+- Recommandation système: {recommendation.value}
+- Alerte gonflement score: {'Oui' if score_inflation_flag else 'Non'}
+
+**COMPOSANTES DU SCORE:**
+{components_text}
+
+---
+
+**PARTIE 1 — EXPLICATION CLIENT (en français, simple et direct, 100-150 mots):**
+Explique la décision de façon compréhensible pour un particulier.
+Si refus ou révision: donne 2-3 conseils concrets pour améliorer son score.
+Ne mentionne pas les détails techniques de scoring.
+
+**PARTIE 2 — EXPLICATION CONFORMITÉ (en français, technique, 80-100 mots):**
+Résume les facteurs clés du score, l'indicateur d'inflation si présent,
+et la justification de la recommandation pour le dossier de conformité."""
+
+        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        response = client.messages.create(
+            model=settings.llm_model,
+            max_tokens=600,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.content[0].text if response.content else ""
 
     async def list_credit_requests(
         self,

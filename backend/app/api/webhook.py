@@ -1,5 +1,6 @@
 """Webhook endpoint — receives transaction events from Fineract."""
 
+import json
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -11,6 +12,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import verify_webhook_signature
 from app.schemas.transaction import WebhookPayload
+from app.services.data_quality_service import DataQualityService
 from app.services.transaction_service import TransactionService
 
 logger = logging.getLogger(__name__)
@@ -51,8 +53,25 @@ async def receive_fineract_webhook(
     if not payload.ip_address and request.client:
         payload.ip_address = request.client.host
 
+    # Data quality validation
+    dq = DataQualityService()
+    result = dq.validate(payload)
+    if not result.is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"data_quality_errors": result.errors},
+        )
+    if result.warnings:
+        logger.warning(
+            "Data quality warnings for transaction %s: %s",
+            payload.transaction_id,
+            result.warnings,
+        )
+
     service = TransactionService(db)
-    transaction, is_new = await service.ingest_transaction(payload)
+    transaction, is_new = await service.ingest_transaction(
+        payload, data_quality_warnings=result.warnings or None
+    )
 
     if is_new:
         # Only trigger analysis for new transactions (idempotency)

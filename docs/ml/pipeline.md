@@ -105,15 +105,48 @@ Activated automatically once minimum label thresholds are met.
 | Fast inference | Sub-millisecond scoring per transaction |
 | Robust to outliers | Built-in regularization prevents overfitting |
 
-### Features Used (20 total)
+### Features Used (36 total)
 
-```
-Transaction-level:        amount, log(amount), type (one-hot), hour, day_of_week
-Pattern flags:           is_weekend, is_night, is_round_hundred, is_round_thousand
-Velocity (1h window):    tx_count_1h, total_amount_1h
-Velocity (24h window):   tx_count_24h, total_amount_24h, avg_amount_24h, max_amount_24h
-Behavioral:              amount_vs_avg_ratio, unique_counterparties_24h, same_type_ratio_24h
-```
+The full feature vector used by both the anomaly detector and the fraud classifier:
+
+| # | Feature Name | Category | Description |
+|---|-------------|----------|-------------|
+| 0 | `amount` | Transaction | Raw transaction amount |
+| 1 | `amount_log` | Transaction | log1p(amount) — compresses skewed distribution |
+| 2 | `is_deposit` | Transaction | 1 if transaction type is DEPOSIT |
+| 3 | `is_withdrawal` | Transaction | 1 if transaction type is WITHDRAWAL |
+| 4 | `is_transfer` | Transaction | 1 if transaction type is TRANSFER |
+| 5 | `hour_of_day` | Transaction | Hour of day (0–23) |
+| 6 | `day_of_week` | Transaction | Day of week (0=Monday, 6=Sunday) |
+| 7 | `is_weekend` | Transaction | 1 if Saturday or Sunday |
+| 8 | `is_night` | Transaction | 1 if hour is 22:00–06:00 |
+| 9 | `is_round_hundred` | Transaction | 1 if amount is a multiple of 100 |
+| 10 | `is_round_thousand` | Transaction | 1 if amount is a multiple of 1000 |
+| 11 | `tx_count_1h` | 24h window | Number of transactions from this account in last 1 hour |
+| 12 | `tx_count_24h` | 24h window | Number of transactions from this account in last 24 hours |
+| 13 | `total_amount_1h` | 24h window | Total transaction volume in last 1 hour |
+| 14 | `total_amount_24h` | 24h window | Total transaction volume in last 24 hours |
+| 15 | `avg_amount_24h` | 24h window | Average transaction amount in last 24 hours |
+| 16 | `max_amount_24h` | 24h window | Maximum transaction amount in last 24 hours |
+| 17 | `amount_vs_avg_ratio` | 24h window | Current amount / 24h average (deviation signal) |
+| 18 | `unique_counterparties_24h` | 24h window | Distinct counterparty accounts in last 24 hours |
+| 19 | `same_type_ratio_24h` | 24h window | Fraction of 24h transactions with same type |
+| 20 | `is_new_ip_for_account` | 24h window | 1 if IP not seen for this account in last 24 hours |
+| 21 | `unique_ips_24h` | 24h window | Count of distinct IP addresses in last 24 hours |
+| 22 | `tx_count_7d` | 7d window | Transaction count over last 7 days |
+| 23 | `total_amount_7d` | 7d window | Total volume over last 7 days |
+| 24 | `avg_amount_7d` | 7d window | Average transaction amount over 7 days |
+| 25 | `max_amount_7d` | 7d window | Maximum transaction amount over 7 days |
+| 26 | `unique_counterparties_7d` | 7d window | Distinct counterparty accounts in last 7 days |
+| 27 | `amount_vs_7d_avg_ratio` | 7d window | Current amount / 7d average (behavioral deviation) |
+| 28 | `tx_velocity_trend` | 7d window | 24h tx count / (7d tx count / 7) — acceleration signal |
+| 29 | `receiver_diversity_7d` | 7d window | Unique recipients / total 7d transactions |
+| 30 | `geo_distance_from_usual` | 7d window | 1.0 if current country differs from 7d modal country |
+| 31 | `has_loan_disbursement_7d` | 7d window | 1 if any loan disbursement occurred in last 7 days |
+| 32 | `is_agent` | Actor context | 1 if actor_type == "agent" |
+| 33 | `is_merchant` | Actor context | 1 if actor_type == "merchant" |
+| 34 | `kyc_level_norm` | Actor context | kyc_level / 4.0 (unknown → 0.5 default) |
+| 35 | `is_new_kyc` | Actor context | 1 if kyc_level == 1 (brand-new / unverified) |
 
 ### Training Configuration
 
@@ -211,6 +244,135 @@ Training metrics (AUC, precision, recall, F1, sample counts) are logged to MLflo
 ### Atomic Model Writes
 
 Model files are written to a temporary file first, then renamed atomically. This prevents read corruption when API pods load a model file while a Celery worker is retraining.
+
+## Feature Set (36 Features — Phase 7.1)
+
+The feature vector was expanded from 22 to 36 features. See the full feature table in the [Features Used](#features-used-36-total) section under Phase 3.
+
+**Important**: The feature dimension change (22 → 36) invalidates any previously serialized model files. The system falls back to rules-only mode (`is_ready=False`) until models are retrained on the new feature set.
+
+---
+
+## Extended 7-day Window Features (indices 22–31)
+
+These features capture medium-term behavioral patterns that the original 24h window misses. They are extracted from `account_history_7d` passed to `FeatureExtractor.extract()`. If the 7d history is not supplied, the extractor falls back to the 24h list (divided by 7 for rate normalization).
+
+| Index | Feature | Purpose |
+|-------|---------|---------|
+| 22 | `tx_count_7d` | Baseline transaction count over 7 days — contextualizes 1h/24h velocity |
+| 23 | `total_amount_7d` | Total volume baseline over 7 days |
+| 24 | `avg_amount_7d` | Average amount baseline used to compute `amount_vs_7d_avg_ratio` |
+| 25 | `max_amount_7d` | Maximum single transaction over 7 days — flags outlier amounts |
+| 26 | `unique_counterparties_7d` | Counterparty breadth — high diversity may indicate layering |
+| 27 | `amount_vs_7d_avg_ratio` | Current amount / 7d average — key behavioral deviation signal |
+| 28 | `tx_velocity_trend` | 24h count / (7d count / 7) — acceleration of transaction rate |
+| 29 | `receiver_diversity_7d` | Unique recipients / total 7d transactions — mule distribution signal |
+| 30 | `geo_distance_from_usual` | 1.0 if current country differs from 7d modal country — geographic outlier |
+| 31 | `has_loan_disbursement_7d` | 1 if any loan disbursement occurred in last 7 days — triggers loan monitoring context |
+
+---
+
+## Actor Context Features (indices 32–35)
+
+These four features encode the actor model into the ML feature vector, allowing the models to learn actor-specific behavioral norms without maintaining separate model files per actor type.
+
+| Index | Feature | Description |
+|-------|---------|-------------|
+| 32 | `is_agent` | 1 if `actor_type == "agent"` — agent operators have very different velocity norms |
+| 33 | `is_merchant` | 1 if `actor_type == "merchant"` — merchant collection patterns differ from P2P transfers |
+| 34 | `kyc_level_norm` | `kyc_level / 4.0` — normalized KYC level. Unknown/missing → 0.5 (neutral) |
+| 35 | `is_new_kyc` | 1 if `kyc_level == 1` (brand-new / unverified account) — high-risk onboarding signal |
+
+---
+
+## One-Class SVM Ensemble
+
+When `AML_ANOMALY_ENSEMBLE_ENABLED=true`, the anomaly detector combines two models:
+
+```
+final_anomaly_score = 0.6 × IsolationForest_score + 0.4 × OneClassSVM_score
+```
+
+The One-Class SVM uses an RBF kernel and is trained alongside the Isolation Forest on the same data. It catches anomaly patterns in dense regions of feature space where Isolation Forest (a tree-based method) is less sensitive.
+
+Both models are saved atomically and loaded together. If the SVM model file is missing (e.g., first run after enabling), the system falls back to Isolation Forest only and logs a warning.
+
+**Configuration:**
+```env
+AML_ANOMALY_ENSEMBLE_ENABLED=true  # default: false
+```
+
+---
+
+## Shadow/Canary Deployment
+
+After each successful training run, the trained model is also written to a **shadow slot** (a separate file path alongside the production model). The shadow model runs on every transaction in parallel but its scores are only logged — they never influence risk decisions or trigger alerts.
+
+```
+Training run completes
+    → Production model file updated (atomic rename)
+    → Shadow model file also written (same weights, separate path)
+
+Per transaction:
+    → Production model → contributes to final_score
+    → Shadow model     → score appended to model_health table (shadow_score column)
+```
+
+The `promote_shadow_model` Celery task promotes the shadow to production when:
+1. Shadow has been running for at least `AML_SHADOW_MODEL_PROMOTION_DAYS` days (default: 7)
+2. Shadow AUC exceeds production AUC by at least `AML_SHADOW_MODEL_PROMOTION_AUC_DELTA` (default: 0.02)
+
+**Configuration:**
+```env
+AML_SHADOW_MODEL_ENABLED=true                  # default: false
+AML_SHADOW_MODEL_PROMOTION_DAYS=7              # days before promotion is evaluated
+AML_SHADOW_MODEL_PROMOTION_AUC_DELTA=0.02      # minimum AUC improvement required
+```
+
+---
+
+## Synthetic Data Generator
+
+Located at `backend/app/scripts/generate_aml_typologies.py`. Generates labeled synthetic transactions covering five IBM AMLSim typologies plus WeBank-specific patterns.
+
+```bash
+python -m app.scripts.generate_aml_typologies \
+  --n-typologies 100 \
+  --fraud-rate 0.05 \
+  --output aml_synthetic.csv
+```
+
+**Typology generators (one class per typology):**
+
+| Generator Class | Typology | Description |
+|----------------|----------|-------------|
+| `ScatterGatherGenerator` | Scatter-gather | N→1 collection into a single account + single large disbursement |
+| `BipartiteLayeringGenerator` | Bipartite layering | Fan-out then fan-in through an intermediary account layer |
+| `StackingGenerator` | Stacking | Rapid proportional sequential hops (each amount 80–120% of prior) |
+| `AgentStructuringGenerator` | Agent structuring | Sub-threshold deposits repeated via the same agent to avoid CTR |
+| `LoanAndRunGenerator` | Loan-and-run | Rapid extraction of loan proceeds shortly after disbursement |
+
+Use synthetic data to bootstrap model training before sufficient real labeled data is available. Always mix with real data once available — purely synthetic training leads to distribution mismatch.
+
+---
+
+## Model Drift Monitoring
+
+PSI (Population Stability Index) is computed against the feature distribution baseline saved at the last retraining run.
+
+| PSI Range | Status | Recommended Action |
+|-----------|--------|-------------------|
+| PSI < 0.1 | Stable | No action required |
+| 0.1 ≤ PSI < 0.25 | Warning | Monitor closely; consider retraining within 7 days |
+| PSI ≥ 0.25 | Drift | Immediate retraining required |
+
+Drift metrics are visible via the Model Health API:
+- `GET /api/v1/model-health/drift` — current drift summary with recommendations
+- `GET /api/v1/model-health/history/{model_name}` — historical PSI and AUC over time
+
+Drift alerts also appear in Prometheus at `/metrics` (gauge: `aml_model_psi{model="fraud_classifier"}`).
+
+---
 
 ## Future Enhancements
 

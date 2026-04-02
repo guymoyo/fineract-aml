@@ -68,6 +68,17 @@ class Transaction(Base, TimestampMixin):
     country_code: Mapped[str | None] = mapped_column(String(2))  # ISO 3166-1 alpha-2
     geo_location: Mapped[str | None] = mapped_column(String(100))  # "lat,lon" or city
 
+    # WeBank actor context (populated by BFF from Keycloak token claims)
+    actor_type: Mapped[str | None] = mapped_column(String(20))   # "customer" | "agent" | "merchant"
+    agent_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    branch_id: Mapped[str | None] = mapped_column(String(100))
+    merchant_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    device_id: Mapped[str | None] = mapped_column(String(64))    # SHA-256 hash
+    kyc_level: Mapped[int | None] = mapped_column()
+
+    # Data quality
+    data_quality_warnings: Mapped[str | None] = mapped_column(Text)  # JSON array of warning strings
+
     # Risk scoring
     risk_score: Mapped[float | None] = mapped_column(Float)
     risk_level: Mapped[RiskLevel | None] = mapped_column(Enum(RiskLevel, values_callable=lambda e: [x.value for x in e]))

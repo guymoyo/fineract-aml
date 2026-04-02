@@ -48,6 +48,14 @@ celery_app.conf.update(
             "task": "app.tasks.watchlist_sync.sync_all_watchlists",
             "schedule": 21600.0,  # Every 6 hours
         },
+        "update-agent-profiles": {
+            "task": "app.tasks.agent_profile_update.update_agent_profiles",
+            "schedule": 86400.0,  # Daily (nightly, after transaction data is fresh)
+        },
+        "check-escalations": {
+            "task": "app.tasks.escalation.check_escalations",
+            "schedule": 3600.0,  # Hourly
+        },
     },
 )
 
@@ -58,4 +66,9 @@ celery_app.conf.update(include=[
     "app.tasks.polling",
     "app.tasks.retention",
     "app.tasks.watchlist_sync",
+    "app.tasks.agent_profile_update",
+    "app.tasks.loan_monitoring",
+    "app.tasks.llm_investigation",
+    "app.tasks.escalation",
+    "app.tasks.promote_shadow",
 ])

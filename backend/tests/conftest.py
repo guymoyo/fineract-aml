@@ -32,6 +32,11 @@ class FakeTransaction:
     user_agent: str | None = None
     country_code: str | None = None
     geo_location: str | None = None
+    actor_type: str | None = None      # "customer" | "agent" | "merchant"
+    agent_id: str | None = None
+    merchant_id: str | None = None
+    kyc_level: int | None = None
+    shadow_score: float | None = None
 
     def __post_init__(self):
         from app.models.transaction import TransactionType

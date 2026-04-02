@@ -15,7 +15,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -66,6 +66,10 @@ class CreditRequest(Base, TimestampMixin):
         Enum(CreditRecommendation, values_callable=lambda e: [x.value for x in e]),
         nullable=False,
     )
+
+    # Score gaming detection
+    score_inflation_flag: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    explanation_text: Mapped[str | None] = mapped_column(Text)  # LLM-generated explanation
 
     # Review workflow
     status: Mapped[CreditRequestStatus] = mapped_column(
