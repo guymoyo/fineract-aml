@@ -81,14 +81,16 @@ def _save_drift_baseline(feature_matrix, detector, feature_names):
         logger.warning("Failed to save drift baseline: %s", e)
 
 
-def _check_and_log_drift(feature_matrix, feature_names):
-    """Check feature drift against baseline."""
+def _check_and_log_drift(feature_matrix, detector, feature_names):
+    """Check feature drift against baseline using actual model scores."""
     try:
         from app.ml.drift_detector import DriftDetector
 
         drift = DriftDetector()
-        # Use zero scores as placeholder — real scores computed during analysis
-        scores = np.zeros(len(feature_matrix))
+        # Use actual model scores instead of zero placeholder to get meaningful PSI
+        scaled = detector.scaler.transform(feature_matrix)
+        raw_scores = detector.model.decision_function(scaled)
+        scores = -raw_scores  # invert: higher = more anomalous
         result = drift.check_drift(feature_matrix, scores, feature_names)
         if result.get("status") in ("warning", "critical"):
             logger.warning("Drift detected: %s", result)
@@ -174,14 +176,23 @@ async def _retrain_anomaly():
     from app.core.config import settings
     from app.features.extractor import FeatureExtractor
     from app.ml.anomaly_detector import AnomalyDetector
+    from app.models.alert import Alert, AlertStatus
     from app.models.transaction import Transaction
 
     _engine = create_async_engine(settings.database_url)
     async_session = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as db:
+        # Exclude confirmed-fraud transactions — Isolation Forest assumes mostly-clean data
+        confirmed_fraud_tx_ids = select(Alert.transaction_id).where(
+            Alert.status == AlertStatus.CONFIRMED_FRAUD,
+            Alert.transaction_id.isnot(None),
+        )
         result = await db.execute(
-            select(Transaction).order_by(Transaction.created_at.desc()).limit(10000)
+            select(Transaction)
+            .where(Transaction.id.notin_(confirmed_fraud_tx_ids))
+            .order_by(Transaction.created_at.desc())
+            .limit(10000)
         )
         transactions = list(result.scalars().all())
 
@@ -204,8 +215,9 @@ async def _retrain_anomaly():
         detector = AnomalyDetector()
         metrics = detector.train(feature_matrix)
 
-        # Save drift baseline and log to MLflow
+        # Save drift baseline and check drift against previous baseline
         _save_drift_baseline(feature_matrix, detector, FeatureExtractor.get_feature_names())
+        _check_and_log_drift(feature_matrix, detector, FeatureExtractor.get_feature_names())
         _log_to_mlflow("anomaly_detector", metrics)
 
         # Persist ModelHealthSnapshot
@@ -217,7 +229,7 @@ async def _retrain_anomaly():
 
 
 async def _retrain_classifier():
-    from sqlalchemy import select
+    from sqlalchemy import func, select
     from sqlalchemy.orm import selectinload
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -246,22 +258,41 @@ async def _retrain_classifier():
         fraud_txs = [a.transaction for a in fraud_alerts.scalars().all() if a.transaction]
         legit_txs = [a.transaction for a in legit_alerts.scalars().all() if a.transaction]
 
+        # Sample unalerted transactions as clean negatives (the majority class in real life)
+        # Use 3x the positive count to balance without extreme imbalance
+        n_positives = len(fraud_txs)
+        if n_positives > 0:
+            clean_sample_result = await db.execute(
+                select(Transaction)
+                .where(~Transaction.id.in_(
+                    select(Alert.transaction_id).where(Alert.transaction_id.isnot(None))
+                ))
+                .order_by(func.random())
+                .limit(min(n_positives * 3, 5000))
+            )
+            clean_txs = list(clean_sample_result.scalars().all())
+        else:
+            clean_txs = []
+
         classifier = FraudClassifier()
-        if not classifier.can_train(len(fraud_txs), len(fraud_txs) + len(legit_txs)):
+        total_samples = len(fraud_txs) + len(legit_txs) + len(clean_txs)
+        if not classifier.can_train(len(fraud_txs), total_samples):
             logger.info(
-                "Not enough labeled data: %d fraud, %d legitimate (need %d fraud, %d total)",
+                "Not enough labeled data: %d fraud, %d legitimate, %d clean (need %d fraud, %d total)",
                 len(fraud_txs),
                 len(legit_txs),
+                len(clean_txs),
                 classifier.MIN_FRAUD_SAMPLES,
                 classifier.MIN_TOTAL_SAMPLES,
             )
             return
 
-        # Collect all labeled transactions and fetch their account history
-        all_labeled_txs = fraud_txs + legit_txs
+        # Combine: fraud=1, false_positive=0, clean=0
+        all_transactions = fraud_txs + legit_txs + clean_txs
+        all_labels = [1] * len(fraud_txs) + [0] * len(legit_txs) + [0] * len(clean_txs)
 
         # Fetch surrounding transactions for all accounts involved (24h window)
-        account_ids = {tx.fineract_account_id for tx in all_labeled_txs}
+        account_ids = {tx.fineract_account_id for tx in all_transactions}
         all_related_txs = []
         for account_id in account_ids:
             result = await db.execute(
@@ -275,46 +306,51 @@ async def _retrain_classifier():
 
         # Build feature matrix with proper account history (fixes train/serve skew)
         features_list = []
-        labels = []
-
-        for tx in fraud_txs:
+        for tx in all_transactions:
             history_1h, history_24h, history_7d = _build_account_history(tx, all_related_txs, account_index)
             features = FeatureExtractor.extract(tx, history_1h, history_24h, history_7d)
             features_list.append(features)
-            labels.append(1)
-
-        for tx in legit_txs:
-            history_1h, history_24h, history_7d = _build_account_history(tx, all_related_txs, account_index)
-            features = FeatureExtractor.extract(tx, history_1h, history_24h, history_7d)
-            features_list.append(features)
-            labels.append(0)
 
         feature_matrix = np.vstack(features_list)
-        label_array = np.array(labels)
+        label_array = np.array(all_labels)
+
+        # Sort by transaction date to avoid future data leakage (temporal CV)
+        sorted_pairs = sorted(
+            zip(all_transactions, features_list, all_labels),
+            key=lambda p: p[0].transaction_date,
+        )
+        sorted_features = np.vstack([p[1] for p in sorted_pairs])
+        sorted_labels = np.array([p[2] for p in sorted_pairs])
+
+        # Temporal CV: use first 70% as train, last 30% as validation
+        n = len(sorted_pairs)
+        split = int(n * 0.7)
+        train_features = sorted_features[:split]
+        train_labels = sorted_labels[:split]
+        val_features = sorted_features[split:]
+        val_labels = sorted_labels[split:]
 
         metrics = classifier.train(
-            feature_matrix,
-            label_array,
+            train_features,
+            train_labels,
+            val_features=val_features,
+            val_labels=val_labels,
             feature_names=FeatureExtractor.get_feature_names(),
         )
 
         # After a successful production deployment, write a copy to the shadow slot.
-        # This establishes the baseline challenger — future training runs will overwrite
-        # it, and promotion moves the shadow back to production after validation.
         if metrics.get("deployed"):
             try:
                 from sklearn.preprocessing import FunctionTransformer
                 from app.ml.shadow_scorer import ShadowScorer
                 shadow = ShadowScorer()
-                # FunctionTransformer acts as an identity scaler (pass-through) since
-                # XGBoost handles feature scaling internally.
                 shadow.save_as_shadow(classifier.model, FunctionTransformer())
                 logger.info("Shadow model updated after classifier training")
             except Exception as shadow_exc:
                 logger.warning("Failed to update shadow model: %s", shadow_exc)
 
         # Check drift and log to MLflow
-        _check_and_log_drift(feature_matrix, FeatureExtractor.get_feature_names())
+        _check_and_log_drift(feature_matrix, detector=None, feature_names=FeatureExtractor.get_feature_names())
         _log_to_mlflow("fraud_classifier", metrics)
 
         # Persist ModelHealthSnapshot

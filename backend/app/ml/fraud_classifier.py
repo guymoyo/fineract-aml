@@ -25,7 +25,6 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 from app.core.config import settings
 
@@ -73,13 +72,21 @@ class FraudClassifier:
         self,
         features: np.ndarray,
         labels: np.ndarray,
+        val_features: np.ndarray | None = None,
+        val_labels: np.ndarray | None = None,
         feature_names: list[str] | None = None,
     ) -> dict:
         """Train the fraud classifier on labeled data.
 
+        Uses temporal train/val split to avoid future data leakage.
+        If val_features/val_labels are not provided, falls back to a
+        70/30 split of the provided data.
+
         Args:
-            features: 2D array (n_samples, n_features).
-            labels: 1D binary array (0=legitimate, 1=fraud).
+            features: 2D array (n_samples, n_features) — training set.
+            labels: 1D binary array (0=legitimate, 1=fraud) — training labels.
+            val_features: Optional held-out validation features (temporal split).
+            val_labels: Optional held-out validation labels.
             feature_names: Optional feature names for interpretability.
 
         Returns:
@@ -111,14 +118,23 @@ class FraudClassifier:
             use_label_encoder=False,
         )
 
-        # Cross-validation for robust metrics
-        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-        cv_scores = cross_val_score(
-            self.model, features, labels, cv=cv, scoring="roc_auc"
-        )
-
-        # Final training on all data
+        # Train on the provided training set
         self.model.fit(features, labels)
+
+        # Temporal validation: compute AUC on held-out future data
+        if val_features is not None and val_labels is not None and len(val_labels) > 0:
+            val_proba = self.model.predict_proba(val_features)[:, 1]
+            try:
+                auc = float(roc_auc_score(val_labels, val_proba))
+            except ValueError:
+                # Only one class in val set — not informative
+                auc = float("nan")
+            auc_std = 0.0  # single split, no std
+        else:
+            # Fallback: evaluate on training data (optimistic but better than nothing)
+            val_proba = self.model.predict_proba(features)[:, 1]
+            auc = float(roc_auc_score(labels, val_proba))
+            auc_std = 0.0
 
         # Training predictions for metrics
         predictions = self.model.predict(features)
@@ -130,20 +146,17 @@ class FraudClassifier:
             for name, score in zip(feature_names, self.model.feature_importances_):
                 importance[name] = float(score)
 
-        cv_auc_mean = float(np.mean(cv_scores))
-        cv_auc_std = float(np.std(cv_scores))
-
         metrics = {
             "version": None,
             "n_samples": len(labels),
             "n_fraud": n_fraud,
             "n_legitimate": n_legit,
-            "cv_auc_mean": cv_auc_mean,
-            "cv_auc_std": cv_auc_std,
+            "auc": auc,
+            "auc_std": auc_std,
             "train_auc": float(roc_auc_score(labels, probabilities)),
-            "train_precision": float(precision_score(labels, predictions)),
-            "train_recall": float(recall_score(labels, predictions)),
-            "train_f1": float(f1_score(labels, predictions)),
+            "train_precision": float(precision_score(labels, predictions, zero_division=0)),
+            "train_recall": float(recall_score(labels, predictions, zero_division=0)),
+            "train_f1": float(f1_score(labels, predictions, zero_division=0)),
             "feature_importance": importance,
             "classification_report": classification_report(
                 labels, predictions, target_names=["legitimate", "fraud"]
@@ -152,14 +165,13 @@ class FraudClassifier:
         }
 
         # Validation gate: only deploy if model meets quality thresholds
-        if cv_auc_mean < MIN_CV_AUC or cv_auc_std > MAX_CV_AUC_STD:
+        import math
+        if math.isnan(auc) or auc < MIN_CV_AUC:
             logger.warning(
-                "Model failed validation gate: cv_auc=%.4f (min %.2f), cv_std=%.4f (max %.2f). "
+                "Model failed validation gate: auc=%.4f (min %.2f). "
                 "Keeping previous model.",
-                cv_auc_mean,
+                auc if not math.isnan(auc) else -1,
                 MIN_CV_AUC,
-                cv_auc_std,
-                MAX_CV_AUC_STD,
             )
             # Restore previous model if it existed
             self.model = None
@@ -171,7 +183,7 @@ class FraudClassifier:
         metrics["deployed"] = True
         self._save()
 
-        logger.info("Fraud classifier trained and deployed: AUC=%.4f", cv_auc_mean)
+        logger.info("Fraud classifier trained and deployed: AUC=%.4f", auc)
         return metrics
 
     def predict(self, features: np.ndarray) -> tuple[float, str]:

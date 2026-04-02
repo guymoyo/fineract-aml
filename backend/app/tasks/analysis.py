@@ -70,6 +70,8 @@ async def _analyze(transaction_id: str):
     from app.ml.fraud_classifier import FraudClassifier
     from app.models.alert import AlertSource
     from app.models.ctr import CTRStatus, CurrencyTransactionReport
+    from app.models.sanctions import ScreeningStatus
+    from app.models.transaction import RiskLevel
     from app.models.rule_match import RuleMatch
     from app.models.transaction import Transaction
     from app.rules.engine import RuleEngine
@@ -133,9 +135,13 @@ async def _analyze(transaction_id: str):
             ml_score, model_version = fraud_classifier.predict(features)
 
         # 7. Combine scores
-        # Priority: ML model > anomaly detection > rules
+        # Rule-heavy weighting until classifier has unbiased training data (Issue #33)
         if fraud_classifier.is_ready:
-            final_score = ml_score * 0.5 + anomaly_score * 0.3 + rule_result.combined_score * 0.2
+            final_score = (
+                rule_result.combined_score * 0.5
+                + anomaly_score * 0.3
+                + ml_score * 0.2
+            )
         elif has_anomaly_model:
             # No ML model yet — rely on rules + anomaly detection
             final_score = anomaly_score * 0.5 + rule_result.combined_score * 0.5
@@ -163,9 +169,17 @@ async def _analyze(transaction_id: str):
         )
 
         # 10. Create alert if needed
-        source = AlertSource.ML_MODEL if fraud_classifier.is_ready else AlertSource.ANOMALY_DETECTION
-        if rule_result.triggered_rules and not fraud_classifier.is_ready:
+        # Determine primary source based on which signal contributed most (Issues #24, #25)
+        if rule_result.triggered_rules and rule_result.combined_score >= anomaly_score and rule_result.combined_score >= ml_score:
             source = AlertSource.RULE_ENGINE
+        elif ml_score > 0 and ml_score >= anomaly_score and fraud_classifier.is_ready:
+            source = AlertSource.ML_MODEL
+        elif anomaly_score > 0 and has_anomaly_model:
+            source = AlertSource.ANOMALY_DETECTION
+        elif rule_result.triggered_rules:
+            source = AlertSource.RULE_ENGINE
+        else:
+            source = AlertSource.RULE_ENGINE  # fallback
 
         await service.create_alert_if_needed(
             transaction,
@@ -174,14 +188,45 @@ async def _analyze(transaction_id: str):
             triggered_rules=rule_result.rule_names if rule_result.triggered_rules else None,
         )
 
-        # 11. Sanctions/PEP screening for transfers with counterparties
-        if settings.sanctions_screening_enabled and transaction.counterparty_name:
+        # 11. Sanctions/PEP screening — counterparty + originator (FATF Rec 6)
+        sanctions_hit = False
+        if settings.sanctions_screening_enabled:
             sanctions_service = SanctionsScreeningService(db)
-            await sanctions_service.screen_transaction(
-                transaction_id=str(transaction.id),
-                counterparty_name=transaction.counterparty_name,
-                counterparty_account_id=transaction.counterparty_account_id,
-            )
+
+            # Screen counterparty
+            if transaction.counterparty_name:
+                cp_result = await sanctions_service.screen_name(
+                    transaction.counterparty_name, str(transaction.id)
+                )
+                if cp_result and cp_result.status in (
+                    ScreeningStatus.POTENTIAL_MATCH, ScreeningStatus.CONFIRMED_MATCH
+                ):
+                    sanctions_hit = True
+
+            # Screen originating customer (FATF Rec 6 requires both parties)
+            if transaction.fineract_client_id:
+                orig_result = await sanctions_service.screen_name(
+                    str(transaction.fineract_client_id), str(transaction.id)
+                )
+                if orig_result and orig_result.status in (
+                    ScreeningStatus.POTENTIAL_MATCH, ScreeningStatus.CONFIRMED_MATCH
+                ):
+                    sanctions_hit = True
+
+            # Auto-escalate on any sanctions match (Issue #23)
+            if sanctions_hit:
+                final_score = max(final_score, 0.95)
+                await service.update_risk_score(
+                    transaction.id,
+                    risk_score=final_score,
+                    anomaly_score=anomaly_score,
+                    model_version=model_version,
+                    score_explanation=json.dumps(explanation),
+                )
+                logger.warning(
+                    "Sanctions match for transaction %s — escalated to CRITICAL",
+                    transaction.fineract_transaction_id,
+                )
 
         # 12. Auto-generate CTR if amount exceeds regulatory threshold
         if transaction.amount >= settings.ctr_threshold:
