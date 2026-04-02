@@ -11,12 +11,20 @@ obvious suspicious patterns that don't need machine learning:
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.core.config import settings
 from app.models.transaction import Transaction
 
 logger = logging.getLogger(__name__)
+
+# WAT = West Africa Time (UTC+1), used for Cameroon local time
+WAT = timezone(timedelta(hours=1))
+
+
+def _normalize_dt(dt: datetime) -> datetime:
+    """Strip timezone for comparison to handle mixed aware/naive datetimes."""
+    return dt.replace(tzinfo=None) if dt.tzinfo else dt
 
 
 @dataclass
@@ -69,6 +77,7 @@ class RuleEngine:
         transaction: Transaction,
         account_history: list[Transaction],
         account_history_24h: list[Transaction] | None = None,
+        counterparty_history: list[Transaction] | None = None,
     ) -> RuleEngineResult:
         """Run all rules against a transaction.
 
@@ -77,6 +86,8 @@ class RuleEngine:
             account_history: Short-window history (1h) for velocity rules.
             account_history_24h: Longer-window history (24h) for IP-based rules.
                 Falls back to account_history if not provided.
+            counterparty_history: Recent transactions received by the counterparty
+                (used for cross-account structuring detection).
         """
         result = RuleEngineResult()
 
@@ -95,6 +106,14 @@ class RuleEngine:
         result.results.append(self._check_circular_transfer(transaction, history_24h))
         result.results.append(self._check_new_counterparty(transaction, history_24h))
         result.results.append(self._check_rapid_pair_transfers(transaction, history_24h))
+
+        # Cross-account structuring (requires counterparty history)
+        if counterparty_history is not None:
+            cross_acct = self._check_cross_account_structuring(
+                transaction, counterparty_history, settings.structuring_threshold
+            )
+            if cross_acct is not None:
+                result.results.append(cross_acct)
 
         if result.triggered_rules:
             logger.info(
@@ -172,15 +191,19 @@ class RuleEngine:
         )
 
     def _check_unusual_hours(self, tx: Transaction) -> RuleResult:
-        """Flag transactions outside normal business hours (2-5 AM local)."""
-        tx_hour = tx.transaction_date.hour if isinstance(tx.transaction_date, datetime) else 12
-        is_unusual = 2 <= tx_hour <= 5
+        """Flag transactions outside normal business hours (2-5 AM local WAT)."""
+        if isinstance(tx.transaction_date, datetime):
+            # Convert UTC to WAT (UTC+1) for Cameroon
+            local_hour = tx.transaction_date.astimezone(WAT).hour
+        else:
+            local_hour = 12
+        is_unusual = 2 <= local_hour <= 5
         return RuleResult(
             rule_name="unusual_hours",
             category="timing",
             triggered=is_unusual,
             severity=0.4 if is_unusual else 0.0,
-            details=f"Transaction at {tx_hour}:00 (unusual hours: 2-5 AM)",
+            details=f"Transaction at {local_hour}:00 WAT (unusual hours: 2-5 AM)",
         )
 
     def _check_velocity(
@@ -234,38 +257,58 @@ class RuleEngine:
     ) -> RuleResult:
         """Detect circular transfer patterns (A->B->A) indicating layering.
 
-        If the current transaction is a transfer TO counterparty B, check
-        whether B has previously sent money BACK to this account.
+        Flags only when this is an INCOMING transfer and we previously sent
+        a similar amount to the same counterparty within 24 h — classic
+        round-trip layering.  Does NOT fire on legitimate repeat outbound
+        payments (e.g. rent) to avoid false positives.
         """
         tx_type = getattr(tx, "transaction_type", None)
         tx_type_val = tx_type.value if hasattr(tx_type, "value") else str(tx_type)
         counterparty = getattr(tx, "counterparty_account_id", None)
 
-        if tx_type_val != "transfer" or not counterparty:
+        # Circular layering: receive from party you recently sent to (A sends to B, B sends back to A)
+        # Only flag if this looks like an inbound that matches a recent outbound
+        is_incoming = tx_type_val in ("DEPOSIT", "TRANSFER_IN", "TRANSFER", "deposit", "transfer_in", "transfer")
+
+        if not is_incoming or not counterparty:
             return RuleResult(
                 rule_name="circular_transfer",
                 category="transfer",
                 triggered=False,
                 severity=0.0,
-                details="Not a transfer or no counterparty",
+                details="Not an incoming transfer or no counterparty",
             )
 
-        # Check if counterparty has sent money to this account in 24h history
-        incoming_from_counterparty = [
+        _outbound_types = {"WITHDRAWAL", "TRANSFER_OUT", "TRANSFER", "withdrawal", "transfer_out", "transfer"}
+
+        def _tx_type_val(t: Transaction) -> str:
+            tt = getattr(t, "transaction_type", "")
+            return tt.value if hasattr(tt, "value") else str(tt)
+
+        recent_outbound_to_same = [
             t for t in history
-            if getattr(t, "counterparty_account_id", None) == counterparty
-            and t.id != tx.id
+            if (
+                getattr(t, "counterparty_account_id", None) == counterparty
+                and _tx_type_val(t) in _outbound_types
+                and abs(
+                    _normalize_dt(tx.transaction_date) - _normalize_dt(t.transaction_date)
+                ).total_seconds() < 86400
+                and abs(t.amount - tx.amount) / max(tx.amount, 1) < 0.2  # within 20% amount
+                and t.id != tx.id
+            )
         ]
-        is_circular = len(incoming_from_counterparty) > 0
+        is_circular = len(recent_outbound_to_same) > 0
         return RuleResult(
             rule_name="circular_transfer",
             category="transfer",
             triggered=is_circular,
             severity=0.7 if is_circular else 0.0,
-            details=f"Circular transfer detected: {len(incoming_from_counterparty)} "
-            f"prior transactions with counterparty {counterparty}"
-            if is_circular
-            else f"No circular pattern with counterparty {counterparty}",
+            details=(
+                f"Circular transfer detected: received from counterparty {counterparty} "
+                f"after {len(recent_outbound_to_same)} recent outbound(s) to same party within 24h"
+                if is_circular
+                else f"No circular pattern with counterparty {counterparty}"
+            ),
         )
 
     def _check_new_counterparty(
@@ -333,3 +376,33 @@ class RuleEngine:
             details=f"{count} transfers with counterparty {counterparty} in 24h "
             f"(threshold: 3)",
         )
+
+    def _check_cross_account_structuring(
+        self, tx: Transaction, counterparty_history: list[Transaction], threshold: float
+    ) -> RuleResult | None:
+        """
+        Detect multiple accounts sending sub-threshold amounts to the same beneficiary.
+        Classic CEMAC/mobile money smurfing typology.
+        """
+        if not counterparty_history or len(counterparty_history) < 3:
+            return None
+
+        # Count distinct accounts sending to same counterparty recently
+        recent_senders = set(
+            t.fineract_account_id for t in counterparty_history
+            if t.fineract_account_id != tx.fineract_account_id
+        )
+        total_inflow = sum(t.amount for t in counterparty_history)
+
+        if len(recent_senders) >= 3 and total_inflow > threshold * 2:
+            return RuleResult(
+                rule_name="cross_account_structuring",
+                category="pattern",
+                triggered=True,
+                severity=0.75,
+                details=(
+                    f"{len(recent_senders)} distinct accounts sent "
+                    f"{total_inflow:,.0f} XAF to same beneficiary (structuring via multiple accounts)"
+                ),
+            )
+        return None
