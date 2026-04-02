@@ -92,7 +92,7 @@ services:
     image: ghcr.io/mlflow/mlflow:v2.16.2
     container_name: aml-mlflow
     ports:
-      - "5000:5000"
+      - "5001:5000"
     environment:
       - MLFLOW_BACKEND_STORE_URI=postgresql://aml:aml@postgres:5432/fineract_aml
       - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/artifacts
