@@ -1,12 +1,13 @@
 """Alert endpoints for the compliance dashboard."""
 
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import verify_token
+from app.core.security import UserRole, require_role, verify_token
 from app.models.alert import AlertStatus
 from app.schemas.alert import AlertAssign, AlertListResponse, AlertResponse, AlertStatusUpdate
 from app.schemas.review import ReviewCreate, ReviewResponse
@@ -17,8 +18,10 @@ router = APIRouter(
     prefix="/alerts", tags=["Alerts"], dependencies=[Depends(verify_token)]
 )
 
+_TERMINAL_STATUSES = {"confirmed_fraud", "false_positive", "dismissed", "closed"}
 
-@router.get("", response_model=AlertListResponse)
+
+@router.get("", response_model=AlertListResponse, dependencies=[Depends(require_role(UserRole.ANALYST, UserRole.MLRO, UserRole.ADMIN))])
 async def list_alerts(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
@@ -61,15 +64,35 @@ async def assign_alert(
     return AlertResponse.model_validate(alert)
 
 
-@router.patch("/{alert_id}/status", response_model=AlertResponse)
+@router.patch("/{alert_id}/status", response_model=AlertResponse, dependencies=[Depends(require_role(UserRole.ANALYST, UserRole.MLRO, UserRole.ADMIN))])
 async def update_alert_status(
     alert_id: UUID,
     data: AlertStatusUpdate,
+    current_user: dict = Depends(verify_token),
     db: AsyncSession = Depends(get_db),
 ):
     """Update the status of an alert."""
     service = AlertService(db)
     alert = await service.update_status(alert_id, data.status)
+
+    # COBAC audit trail — record who closed the alert and when
+    new_status = data.status.value if hasattr(data.status, "value") else str(data.status)
+    if new_status.lower() in _TERMINAL_STATUSES:
+        alert.closed_at = datetime.now(timezone.utc)
+        alert.closed_by = current_user.get("username") or current_user.get("sub")
+        await db.flush()
+
+    # Write audit log entry
+    audit = AuditService(db)
+    await audit.log(
+        action="alert_status_changed",
+        resource_type="alert",
+        resource_id=str(alert_id),
+        user_id=current_user.get("sub"),
+        username=current_user.get("username"),
+        details={"new_status": new_status},
+    )
+
     return AlertResponse.model_validate(alert)
 
 

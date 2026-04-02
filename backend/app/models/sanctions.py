@@ -3,7 +3,7 @@
 import enum
 import uuid
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, Index, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -59,7 +59,10 @@ class ScreeningResult(Base, TimestampMixin):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     transaction_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("transactions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     screened_name: Mapped[str] = mapped_column(String(500), nullable=False)
     matched_entry_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -76,4 +79,37 @@ class ScreeningResult(Base, TimestampMixin):
 
     __table_args__ = (
         Index("ix_screening_status", "status"),
+    )
+
+
+class AdverseMediaResult(Base, TimestampMixin):
+    """Result of adverse media screening for a counterparty entity.
+
+    Created when `AdverseMediaService.screen_entity()` finds news hits
+    that match negative AML/fraud keywords. Stored for audit and case
+    enrichment purposes.
+    """
+
+    __tablename__ = "adverse_media_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    transaction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("transactions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    entity_name: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    hit_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    highest_relevance_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    # JSON array of {title, url, published_at, relevance_score, matched_keywords}
+    article_snippets: Mapped[str | None] = mapped_column(Text)
+    screened_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_adverse_media_entity", "entity_name"),
     )

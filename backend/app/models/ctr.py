@@ -2,8 +2,10 @@
 
 import enum
 import uuid
+from datetime import datetime
+from typing import Optional
 
-from sqlalchemy import Enum, Float, Index, String, Text
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,6 +16,7 @@ class CTRStatus(str, enum.Enum):
     PENDING = "pending"
     FILED = "filed"
     ACKNOWLEDGED = "acknowledged"
+    REJECTED = "rejected"
 
 
 class CurrencyTransactionReport(Base, TimestampMixin):
@@ -46,6 +49,17 @@ class CurrencyTransactionReport(Base, TimestampMixin):
     reference_number: Mapped[str | None] = mapped_column(String(100))
     filed_by: Mapped[str | None] = mapped_column(String(100))
     notes: Mapped[str | None] = mapped_column(Text)
+
+    # COBAC required fields
+    filed_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    agent_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # processing agent
+    branch_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # processing branch
+    counterparty_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    counterparty_account: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    filed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    cobac_reference: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # COBAC ack number
 
     __table_args__ = (
         Index("ix_ctr_status", "status"),

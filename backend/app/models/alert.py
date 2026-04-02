@@ -2,8 +2,10 @@
 
 import enum
 import uuid
+from datetime import datetime
+from typing import Optional
 
-from sqlalchemy import Enum, Float, ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +26,7 @@ class AlertSource(str, enum.Enum):
     ANOMALY_DETECTION = "anomaly_detection"
     ML_MODEL = "ml_model"
     MANUAL = "manual"
+    LOAN_MONITORING = "loan_monitoring"
 
 
 class Alert(Base, TimestampMixin):
@@ -47,6 +50,13 @@ class Alert(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     triggered_rules: Mapped[str | None] = mapped_column(Text)
+
+    # LLM investigation report (JSON: summary, typology_match, risk_factors, etc.)
+    investigation_report: Mapped[str | None] = mapped_column(Text)
+
+    # COBAC audit trail — set when alert reaches a terminal state
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # username who closed
 
     assigned_to: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id")

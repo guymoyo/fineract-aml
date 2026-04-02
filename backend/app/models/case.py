@@ -2,8 +2,10 @@
 
 import enum
 import uuid
+from datetime import datetime
+from typing import Optional
 
-from sqlalchemy import Enum, ForeignKey, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,6 +41,17 @@ class Case(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("users.id")
     )
     fineract_client_id: Mapped[str | None] = mapped_column(String(100), index=True)
+
+    # Escalation and SLA tracking
+    escalation_reason: Mapped[str | None] = mapped_column(Text)
+    sla_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # SAR document
+    sar_document_path: Mapped[str | None] = mapped_column(String(512))
+
+    # COBAC audit trail — set when case reaches a terminal/closed state
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # username who closed
 
     # Relationships
     assignee: Mapped["User | None"] = relationship()  # noqa: F821
