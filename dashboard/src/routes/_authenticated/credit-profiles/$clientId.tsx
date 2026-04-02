@@ -139,7 +139,7 @@ function CreditProfileDetailPage() {
                       <ScoreBar
                         key={key}
                         value={val}
-                        label={COMPONENT_LABELS[key]}
+                        label={COMPONENT_LABELS[key] ?? key}
                       />
                     );
                   },

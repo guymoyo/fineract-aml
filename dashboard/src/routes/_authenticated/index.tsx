@@ -1,7 +1,7 @@
 import { transactionStatsOptions, creditAnalyticsOptions } from "@/api/queries";
 import { StatCard } from "@/components/stat-card";
 import { RiskScoreBar } from "@/components/risk-score-bar";
-import { creditSegmentLabel, formatCurrency } from "@/lib/utils";
+import { creditSegmentLabel } from "@/lib/utils";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {

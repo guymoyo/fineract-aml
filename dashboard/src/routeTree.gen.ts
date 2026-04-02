@@ -13,12 +13,16 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedTransactionsIndexRouteImport } from './routes/_authenticated/transactions/index'
+import { Route as AuthenticatedTransactionsTxIdRouteImport } from './routes/_authenticated/transactions/$txId'
 import { Route as AuthenticatedCreditRequestsIndexRouteImport } from './routes/_authenticated/credit-requests/index'
 import { Route as AuthenticatedCreditProfilesIndexRouteImport } from './routes/_authenticated/credit-profiles/index'
+import { Route as AuthenticatedCreditProfilesClientIdRouteImport } from './routes/_authenticated/credit-profiles/$clientId'
 import { Route as AuthenticatedCreditAnalyticsIndexRouteImport } from './routes/_authenticated/credit-analytics/index'
 import { Route as AuthenticatedCasesIndexRouteImport } from './routes/_authenticated/cases/index'
+import { Route as AuthenticatedCasesCaseIdRouteImport } from './routes/_authenticated/cases/$caseId'
 import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenticated/alerts/index'
 import { Route as AuthenticatedAlertsAlertIdRouteImport } from './routes/_authenticated/alerts/$alertId'
+import { Route as AuthenticatedModelHealthIndexRouteImport } from './routes/_authenticated/model-health/index'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -40,6 +44,12 @@ const AuthenticatedTransactionsIndexRoute =
     path: '/transactions/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedTransactionsTxIdRoute =
+  AuthenticatedTransactionsTxIdRouteImport.update({
+    id: '/transactions/$txId',
+    path: '/transactions/$txId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedCreditRequestsIndexRoute =
   AuthenticatedCreditRequestsIndexRouteImport.update({
     id: '/credit-requests/',
@@ -50,6 +60,12 @@ const AuthenticatedCreditProfilesIndexRoute =
   AuthenticatedCreditProfilesIndexRouteImport.update({
     id: '/credit-profiles/',
     path: '/credit-profiles/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedCreditProfilesClientIdRoute =
+  AuthenticatedCreditProfilesClientIdRouteImport.update({
+    id: '/credit-profiles/$clientId',
+    path: '/credit-profiles/$clientId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedCreditAnalyticsIndexRoute =
@@ -63,6 +79,12 @@ const AuthenticatedCasesIndexRoute = AuthenticatedCasesIndexRouteImport.update({
   path: '/cases/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedCasesCaseIdRoute =
+  AuthenticatedCasesCaseIdRouteImport.update({
+    id: '/cases/$caseId',
+    path: '/cases/$caseId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAlertsIndexRoute =
   AuthenticatedAlertsIndexRouteImport.update({
     id: '/alerts/',
@@ -75,16 +97,26 @@ const AuthenticatedAlertsAlertIdRoute =
     path: '/alerts/$alertId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedModelHealthIndexRoute =
+  AuthenticatedModelHealthIndexRouteImport.update({
+    id: '/model-health/',
+    path: '/model-health/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/login': typeof LoginRoute
   '/alerts/$alertId': typeof AuthenticatedAlertsAlertIdRoute
   '/alerts/': typeof AuthenticatedAlertsIndexRoute
+  '/cases/$caseId': typeof AuthenticatedCasesCaseIdRoute
   '/cases/': typeof AuthenticatedCasesIndexRoute
   '/credit-analytics/': typeof AuthenticatedCreditAnalyticsIndexRoute
+  '/credit-profiles/$clientId': typeof AuthenticatedCreditProfilesClientIdRoute
   '/credit-profiles/': typeof AuthenticatedCreditProfilesIndexRoute
   '/credit-requests/': typeof AuthenticatedCreditRequestsIndexRoute
+  '/model-health/': typeof AuthenticatedModelHealthIndexRoute
+  '/transactions/$txId': typeof AuthenticatedTransactionsTxIdRoute
   '/transactions/': typeof AuthenticatedTransactionsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -92,10 +124,14 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/alerts/$alertId': typeof AuthenticatedAlertsAlertIdRoute
   '/alerts': typeof AuthenticatedAlertsIndexRoute
+  '/cases/$caseId': typeof AuthenticatedCasesCaseIdRoute
   '/cases': typeof AuthenticatedCasesIndexRoute
   '/credit-analytics': typeof AuthenticatedCreditAnalyticsIndexRoute
+  '/credit-profiles/$clientId': typeof AuthenticatedCreditProfilesClientIdRoute
   '/credit-profiles': typeof AuthenticatedCreditProfilesIndexRoute
   '/credit-requests': typeof AuthenticatedCreditRequestsIndexRoute
+  '/model-health': typeof AuthenticatedModelHealthIndexRoute
+  '/transactions/$txId': typeof AuthenticatedTransactionsTxIdRoute
   '/transactions': typeof AuthenticatedTransactionsIndexRoute
 }
 export interface FileRoutesById {
@@ -105,10 +141,14 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/alerts/$alertId': typeof AuthenticatedAlertsAlertIdRoute
   '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
+  '/_authenticated/cases/$caseId': typeof AuthenticatedCasesCaseIdRoute
   '/_authenticated/cases/': typeof AuthenticatedCasesIndexRoute
   '/_authenticated/credit-analytics/': typeof AuthenticatedCreditAnalyticsIndexRoute
+  '/_authenticated/credit-profiles/$clientId': typeof AuthenticatedCreditProfilesClientIdRoute
   '/_authenticated/credit-profiles/': typeof AuthenticatedCreditProfilesIndexRoute
   '/_authenticated/credit-requests/': typeof AuthenticatedCreditRequestsIndexRoute
+  '/_authenticated/model-health/': typeof AuthenticatedModelHealthIndexRoute
+  '/_authenticated/transactions/$txId': typeof AuthenticatedTransactionsTxIdRoute
   '/_authenticated/transactions/': typeof AuthenticatedTransactionsIndexRoute
 }
 export interface FileRouteTypes {
@@ -118,10 +158,14 @@ export interface FileRouteTypes {
     | '/login'
     | '/alerts/$alertId'
     | '/alerts/'
+    | '/cases/$caseId'
     | '/cases/'
     | '/credit-analytics/'
+    | '/credit-profiles/$clientId'
     | '/credit-profiles/'
     | '/credit-requests/'
+    | '/model-health/'
+    | '/transactions/$txId'
     | '/transactions/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -129,10 +173,14 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts/$alertId'
     | '/alerts'
+    | '/cases/$caseId'
     | '/cases'
     | '/credit-analytics'
+    | '/credit-profiles/$clientId'
     | '/credit-profiles'
     | '/credit-requests'
+    | '/model-health'
+    | '/transactions/$txId'
     | '/transactions'
   id:
     | '__root__'
@@ -141,10 +189,14 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/alerts/$alertId'
     | '/_authenticated/alerts/'
+    | '/_authenticated/cases/$caseId'
     | '/_authenticated/cases/'
     | '/_authenticated/credit-analytics/'
+    | '/_authenticated/credit-profiles/$clientId'
     | '/_authenticated/credit-profiles/'
     | '/_authenticated/credit-requests/'
+    | '/_authenticated/model-health/'
+    | '/_authenticated/transactions/$txId'
     | '/_authenticated/transactions/'
   fileRoutesById: FileRoutesById
 }
@@ -183,6 +235,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTransactionsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/transactions/$txId': {
+      id: '/_authenticated/transactions/$txId'
+      path: '/transactions/$txId'
+      fullPath: '/transactions/$txId'
+      preLoaderRoute: typeof AuthenticatedTransactionsTxIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/credit-requests/': {
       id: '/_authenticated/credit-requests/'
       path: '/credit-requests'
@@ -195,6 +254,13 @@ declare module '@tanstack/react-router' {
       path: '/credit-profiles'
       fullPath: '/credit-profiles/'
       preLoaderRoute: typeof AuthenticatedCreditProfilesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/credit-profiles/$clientId': {
+      id: '/_authenticated/credit-profiles/$clientId'
+      path: '/credit-profiles/$clientId'
+      fullPath: '/credit-profiles/$clientId'
+      preLoaderRoute: typeof AuthenticatedCreditProfilesClientIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/credit-analytics/': {
@@ -211,6 +277,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCasesIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/cases/$caseId': {
+      id: '/_authenticated/cases/$caseId'
+      path: '/cases/$caseId'
+      fullPath: '/cases/$caseId'
+      preLoaderRoute: typeof AuthenticatedCasesCaseIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/alerts/': {
       id: '/_authenticated/alerts/'
       path: '/alerts'
@@ -225,6 +298,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAlertsAlertIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/model-health/': {
+      id: '/_authenticated/model-health/'
+      path: '/model-health'
+      fullPath: '/model-health/'
+      preLoaderRoute: typeof AuthenticatedModelHealthIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
@@ -232,10 +312,14 @@ interface AuthenticatedRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedAlertsAlertIdRoute: typeof AuthenticatedAlertsAlertIdRoute
   AuthenticatedAlertsIndexRoute: typeof AuthenticatedAlertsIndexRoute
+  AuthenticatedCasesCaseIdRoute: typeof AuthenticatedCasesCaseIdRoute
   AuthenticatedCasesIndexRoute: typeof AuthenticatedCasesIndexRoute
   AuthenticatedCreditAnalyticsIndexRoute: typeof AuthenticatedCreditAnalyticsIndexRoute
+  AuthenticatedCreditProfilesClientIdRoute: typeof AuthenticatedCreditProfilesClientIdRoute
   AuthenticatedCreditProfilesIndexRoute: typeof AuthenticatedCreditProfilesIndexRoute
   AuthenticatedCreditRequestsIndexRoute: typeof AuthenticatedCreditRequestsIndexRoute
+  AuthenticatedModelHealthIndexRoute: typeof AuthenticatedModelHealthIndexRoute
+  AuthenticatedTransactionsTxIdRoute: typeof AuthenticatedTransactionsTxIdRoute
   AuthenticatedTransactionsIndexRoute: typeof AuthenticatedTransactionsIndexRoute
 }
 
@@ -243,11 +327,14 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAlertsAlertIdRoute: AuthenticatedAlertsAlertIdRoute,
   AuthenticatedAlertsIndexRoute: AuthenticatedAlertsIndexRoute,
+  AuthenticatedCasesCaseIdRoute: AuthenticatedCasesCaseIdRoute,
   AuthenticatedCasesIndexRoute: AuthenticatedCasesIndexRoute,
-  AuthenticatedCreditAnalyticsIndexRoute:
-    AuthenticatedCreditAnalyticsIndexRoute,
+  AuthenticatedCreditAnalyticsIndexRoute: AuthenticatedCreditAnalyticsIndexRoute,
+  AuthenticatedCreditProfilesClientIdRoute: AuthenticatedCreditProfilesClientIdRoute,
   AuthenticatedCreditProfilesIndexRoute: AuthenticatedCreditProfilesIndexRoute,
   AuthenticatedCreditRequestsIndexRoute: AuthenticatedCreditRequestsIndexRoute,
+  AuthenticatedModelHealthIndexRoute: AuthenticatedModelHealthIndexRoute,
+  AuthenticatedTransactionsTxIdRoute: AuthenticatedTransactionsTxIdRoute,
   AuthenticatedTransactionsIndexRoute: AuthenticatedTransactionsIndexRoute,
 }
 

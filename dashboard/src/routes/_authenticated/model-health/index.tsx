@@ -1,6 +1,6 @@
 import { modelDriftOptions, modelHealthOptions, modelHistoryOptions } from "@/api/queries";
 import type { ModelHealth } from "@/api/types";
-import { formatDate, formatPercent, formatStatusLabel } from "@/lib/utils";
+import { formatDate, formatPercent } from "@/lib/utils";
 import { useSuspenseQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronDown, ChevronUp } from "lucide-react";
